@@ -20,6 +20,11 @@ seed = 1337
 device = 'cuda' # examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1', etc.
 dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16' # 'float32' or 'bfloat16' or 'float16'
 compile = False # use PyTorch 2.0 to compile the model to be faster
+
+# added for budget comparison <- TODO might need to change configurations.py 
+# OR... might just run with --is_adaptive=True flag... idk
+is_adaptive = False
+
 exec(open('configurator.py').read()) # overrides from command line or config file
 # -----------------------------------------------------------------------------
 
@@ -84,6 +89,8 @@ x = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
 with torch.no_grad():
     with ctx:
         for k in range(num_samples):
-            y = model.generate(x, max_new_tokens, temperature=temperature, top_k=top_k)
+            message = "is NOT" if is_adaptive else "is"
+            print(f"=> this {message} default!")
+            y = model.generate(x, max_new_tokens, temperature=temperature, top_k=top_k, is_adaptive=is_adaptive)
             print(decode(y[0].tolist()))
             print('---------------')
