@@ -18,11 +18,14 @@ from torch.nn import functional as F
 from numba import jit
 import numpy as np
 
+#adaptive softmax import (relative path for now. Probably want to get path from config file maybe?)
+import sys, os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'adaptive_softmax'))
 from adasoftmax import AdaSoftmax
+
 
 class LayerNorm(nn.Module):
     """ LayerNorm but with an optional bias. PyTorch doesn't support simply bias=False """
-
     def __init__(self, ndim, bias):
         super().__init__()
         self.weight = nn.Parameter(torch.ones(ndim))
