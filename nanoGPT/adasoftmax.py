@@ -6,13 +6,14 @@ import math
 from time import time
 
 from numba import jit
+from numba.experimental import jitclass
 
+@jitclass
 class AdaSoftmax():
     def __init__(self,):
         pass
 
-    @jit(nopython=True, cache=True)
-    def compute_mip_batch_topk_ver2_warm(atoms, query, sigma, delta, batch_size=16, k=1, mu=None, budget_vec=None):
+    def compute_mip_batch_topk_ver2_warm(self, atoms, query, sigma, delta, batch_size=16, k=1, mu=None, budget_vec=None):
         """
         does same thing as previous, but instead of doing multiplication between single element of A and x,
         it sequentially slices 'batch_size' elements from left to right, and performs inner product to
@@ -137,8 +138,7 @@ class AdaSoftmax():
 
         return best_ind, n_samples, mu, d_used
 
-    @jit(nopython=True, cache=True)
-    def estimate_softmax_normalization_warm(atoms, query, beta, epsilon, delta, sigma, bruteforce=False):
+    def estimate_softmax_normalization_warm(self, atoms, query, beta, epsilon, delta, sigma, bruteforce=False):
         n = atoms.shape[0]
         d = query.shape[0]
         used_samples = 0
@@ -180,17 +180,16 @@ class AdaSoftmax():
         return S_hat, mu_hat_refined, n_samples
 
     # adaSoftmax with warm start
-    @jit(nopython=True, cache=True)
-    def ada_softmax(A, x, beta, epsilon, delta, sigma, k, bruteforce=False, return_estimates=False):
+    def ada_softmax(self, A, x, beta, epsilon, delta, sigma, k, bruteforce=False, return_estimates=False):
 
-        S_hat, mu_hat, budget_vec = estimate_softmax_normalization_warm(A, x, beta, epsilon / 2, delta / 3, sigma,
+        S_hat, mu_hat, budget_vec = self.estimate_softmax_normalization_warm(A, x, beta, epsilon / 2, delta / 3, sigma,
                                                                         bruteforce=bruteforce)
 
         normalization_budget = np.sum(budget_vec)
 
         # print("normalization budget:", normalization_budget)
 
-        best_index_hat, budget_mip, mu_hat, budget_vec = compute_mip_batch_topk_ver2_warm(A, x, sigma, delta / 3,
+        best_index_hat, budget_mip, mu_hat, budget_vec = self.compute_mip_batch_topk_ver2_warm(A, x, sigma, delta / 3,
                                                                                           batch_size=16, k=k, mu=mu_hat,
                                                                                           budget_vec=budget_vec)
 
@@ -218,7 +217,7 @@ class AdaSoftmax():
         for i, arm_index in enumerate(best_index_hat):
             mu_additional[i] = A[arm_index, budget_vec[arm_index]: n_arm_pull] @ x[budget_vec[arm_index]: n_arm_pull]
 
-        mu_best_hat += np.divide(x.shape[0] * mu_additional, n_arm_pull - budget_vec[best_index_hat])
+        mu_best_hat += np.divide(x.shape[0] * mu_additional, np.maximum(1, n_arm_pull - budget_vec[best_index_hat]))
 
         budget_vec[best_index_hat] = np.maximum(budget_vec[best_index_hat], n_arm_pull)
 
