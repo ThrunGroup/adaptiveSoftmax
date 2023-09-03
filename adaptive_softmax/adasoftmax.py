@@ -143,7 +143,7 @@ class AdaSoftmax():
         d = query.shape[0]
         used_samples = 0
 
-        T0 = min(math.ceil(48 * beta ** 2 * sigma ** 2 * np.log(6 * n / delta)), d)
+        T0 = min(math.ceil(17 * beta ** 2 * sigma ** 2 * np.log(6 * n / delta)), d)
 
         mu_hat = (d / T0) * (atoms[:, :T0] @ query[:T0])
         C = (2 * sigma ** 2 * np.log(6 * n / delta) / T0) ** 0.5
@@ -151,17 +151,22 @@ class AdaSoftmax():
         #Maybe this is better?
         #mu_hat -= np.min(mu_hat)
 
-        # mu_hat_exp = np.exp((mu_hat - C) * beta, dtype=np.float64)
-        mu_hat_exp = np.exp((mu_hat - np.max(mu_hat) - C) * beta)
-        alpha = mu_hat_exp / np.sum(mu_hat_exp)
+        mu_hat_aux = (mu_hat - np.max(mu_hat) - C) * beta
 
-        T = (
-                34 * beta ** 2 * sigma ** 2 * np.log((6 * n) / delta) * n
-                + (8 * sigma ** 2 * np.log((6 * n) / delta) * beta ** 2 * n) / epsilon
-                + (16 * beta ** 2 * sigma ** 2 * np.log(12 / delta)) / epsilon ** 2
+        # mu_hat_exp = np.exp((mu_hat - C) * beta, dtype=np.float64)
+        mu_hat_exp_alpha = np.exp(mu_hat_aux)
+        alpha = mu_hat_exp_alpha / np.sum(mu_hat_exp_alpha)
+
+        mu_hat_exp_gamma = np.exp(mu_hat_aux / 2)
+        gamma = mu_hat_exp_gamma / np.sum(mu_hat_exp_gamma)
+
+        T = beta**2 * sigma**2 (
+                17 * np.log((6 * n) / delta) * n
+                + (32 * np.log((6 * n) / delta) * n) / epsilon
+                + (16 * np.log(12 / delta)) / epsilon ** 2
         )
 
-        n_samples = np.ceil(np.maximum(np.minimum(alpha * T, d), T0)).astype(np.int64)
+        n_samples = np.ceil(np.minimum((alpha + gamma) * T, d)).astype(np.int64)
 
         if bruteforce:
             n_samples = np.zeros(n, dtype=np.int64)
@@ -170,7 +175,7 @@ class AdaSoftmax():
         mu_hat_refined_aux = np.empty(n)
 
         for i in range(n):
-            mu_hat_refined_aux[i] = atoms[i, T0:n_samples[i]] @ query[T0:n_samples[i]]
+            mu_hat_refined_aux[i] = atoms[i, T0:T0 + n_samples[i]] @ query[T0:T0 + n_samples[i]]
 
         mu_hat_refined = np.divide(mu_hat * T0 + mu_hat_refined_aux * d, n_samples)
 
