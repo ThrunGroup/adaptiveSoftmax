@@ -148,8 +148,11 @@ class AdaSoftmax():
         mu_hat = (d / T0) * (atoms[:, :T0] @ query[:T0])
         C = (2 * sigma ** 2 * np.log(6 * n / delta) / T0) ** 0.5
 
+        #Maybe this is better?
+        #mu_hat -= np.min(mu_hat)
+
         # mu_hat_exp = np.exp((mu_hat - C) * beta, dtype=np.float64)
-        mu_hat_exp = np.exp((mu_hat - C) * beta)
+        mu_hat_exp = np.exp((mu_hat - np.max(mu_hat) - C) * beta)
         alpha = mu_hat_exp / np.sum(mu_hat_exp)
 
         T = (
@@ -157,8 +160,6 @@ class AdaSoftmax():
                 + (8 * sigma ** 2 * np.log((6 * n) / delta) * beta ** 2 * n) / epsilon
                 + (16 * beta ** 2 * sigma ** 2 * np.log(12 / delta)) / epsilon ** 2
         )
-
-        # print("T:", T)
 
         n_samples = np.ceil(np.maximum(np.minimum(alpha * T, d), T0)).astype(np.int64)
 
@@ -173,11 +174,17 @@ class AdaSoftmax():
 
         mu_hat_refined = np.divide(mu_hat * T0 + mu_hat_refined_aux * d, n_samples)
 
+        #mu_hat_max_element = np.max(mu_hat_refined)
+
+        mu_hat_refined -= np.max(mu_hat_refined)
+
         # mu_hat_refined_exp = np.exp(beta * mu_hat_refined, dtype=np.float64)
         mu_hat_refined_exp = np.exp(beta * mu_hat_refined)
         S_hat = np.sum(mu_hat_refined_exp)
 
         return S_hat, mu_hat_refined, n_samples
+
+        #Potential hazard: max value of mu_hat for alpha construction and max value of mu hat for S_hat estimation is different, which may result in incorrect sampling or other problems?
 
     # adaSoftmax with warm start
     def ada_softmax(self, A, x, beta, epsilon, delta, sigma, k, bruteforce=False, return_estimates=False):
@@ -193,7 +200,7 @@ class AdaSoftmax():
                                                                                           batch_size=16, k=k, mu=mu_hat,
                                                                                           budget_vec=budget_vec)
 
-        best_index_hat = np.sort(best_index_hat[:k])
+        best_index_hat = best_index_hat[:k]
 
         budget_mip = np.sum(budget_vec) - normalization_budget
 
@@ -210,19 +217,19 @@ class AdaSoftmax():
         # budget_spent_best_arm = budget_vec[best_index_hat]
 
         # A_subset = A[best_index_hat]
-        mu_best_hat = mu_hat[best_index_hat]
+        #mu_best_hat = mu_hat[best_index_hat]
 
         mu_additional = np.empty(k)
 
         for i, arm_index in enumerate(best_index_hat):
             mu_additional[i] = A[arm_index, budget_vec[arm_index]: n_arm_pull] @ x[budget_vec[arm_index]: n_arm_pull]
 
-        mu_best_hat += np.divide(x.shape[0] * mu_additional, np.maximum(1, n_arm_pull - budget_vec[best_index_hat]))
+        mu_hat[best_index_hat] += np.divide(x.shape[0] * mu_additional, np.maximum(1, n_arm_pull - budget_vec[best_index_hat]))
 
         budget_vec[best_index_hat] = np.maximum(budget_vec[best_index_hat], n_arm_pull)
 
         # y_best_hat = np.exp(beta * (mu_best_hat), dtype=np.float64)
-        y_best_hat = np.exp(beta * (mu_best_hat))
+        y_best_hat = np.exp(beta * (mu_hat))
         budget = np.sum(budget_vec)
 
         return best_index_hat, y_best_hat / S_hat, budget

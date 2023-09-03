@@ -199,16 +199,19 @@ class GPT(nn.Module):
                 beta = 1 / temperature
                 epsilon = 0.1
                 delta = 0.1
-                sigma = 1.0
+                sigma = 100.0
 
-                A_matrix = self.lm_head.weight.detach().numpy()    # (65, 128)
+                #TODO: make numpy to exploit GPU
+                A_matrix = self.lm_head.weight.detach().cpu().numpy()    # (65, 128)
                 k = A_matrix.shape[0] if top_k is None else min(A_matrix.shape[0], top_k)
-                x = x.detach().numpy()  # (1, 1, 128)
+                #k = A_matrix.shape[0]
+                x = x.detach().cpu().numpy()  # (1, 1, 128)
                 prob_list = list()
                 for batch in range(x.shape[0]):
-                    best_indices, prob, budget = algo.ada_softmax(A_matrix, x[batch, -1], beta, epsilon, delta, sigma, k,)
+                    best_indices, prob, budget = algo.ada_softmax(A_matrix, x[batch, -1], beta, epsilon, delta, sigma, k)
                     prob_list.append(torch.from_numpy(prob))
-                return torch.stack(prob_list), None
+
+                return torch.stack(prob_list).to(torch.device("cuda:0")), None
             else:
                 # inference-time mini-optimization: only forward the lm_head on the very last position
                 logits = self.lm_head(x) # note: using list [-1] to preserve the time dim
@@ -349,8 +352,15 @@ class GPT(nn.Module):
                     logits[logits < v[:, [-1]]] = -float('Inf')
                 # apply softmax to convert logits to (normalized) probabilities
                 probs = F.softmax(logits, dim=-1)   # (1, 64)
+
+                #import ipdb; ipdb.set_trace()
+                
+
+            #import ipdb; ipdb.set_trace()
             # sample from the distribution
+
             idx_next = torch.multinomial(probs, num_samples=1)
+
             # append sampled index to the running sequence and continue
             idx = torch.cat((idx, idx_next), dim=1)
 
