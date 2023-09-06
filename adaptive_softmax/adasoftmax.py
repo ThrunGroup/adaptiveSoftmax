@@ -8,10 +8,25 @@ from time import time
 from numba import jit
 from numba.experimental import jitclass
 
-@jitclass
+#@jitclass
 class AdaSoftmax():
     def __init__(self,):
         pass
+
+    def approx_sigma_bound(self, A, x, n_sigma_sample):
+        #NOTE: We're returning sigma as a sub-gaussian parameter(std of arm pull, not aij*xj)
+        n_arms = A.shape[0]
+        A_subset, x_subset = A[:, :n_sigma_sample], x[:n_sigma_sample]
+
+        elmul = np.multiply(A[:, :n_sigma_sample], x[:n_sigma_sample])
+        #sigma = np.sqrt(np.mean(np.square(elmul.T - np.mean(elmul, axis=1)), axis=0))
+        arm_pull_mean = (A_subset @ x_subset) / n_sigma_sample
+
+        sigma = np.empty(n_arms)
+        for i in range(n_arms):
+            sigma[i] = np.sqrt(np.mean(np.square(elmul[i] - arm_pull_mean[i])))
+
+        return x.shape[0] * np.max(sigma)
 
     def compute_mip_batch_topk_ver2_warm(self, atoms, query, sigma, delta, batch_size=16, k=1, mu=None, budget_vec=None):
         """
@@ -19,6 +34,8 @@ class AdaSoftmax():
         it sequentially slices 'batch_size' elements from left to right, and performs inner product to
         pull an arm.
         """
+        # TODO: divide-by-zero occurs on calculating confidence bound(C) when "large" number of sampling happened in normalization estimation.
+        # Need to pinpoint the cause.
 
         dim = len(query)
         n_atoms = len(atoms)
@@ -87,7 +104,6 @@ class AdaSoftmax():
             solutions = np.nonzero(solution_mask)[0]
 
             if len(solutions) <= k - found_indices_num:
-                # topk_indices = np.append(topk_indices, solutions)
                 best_ind[found_indices_num: found_indices_num + len(solutions)] = solutions
                 found_indices_num += len(solutions)
                 solution_mask = np.logical_xor(solution_mask_before,
@@ -98,20 +114,8 @@ class AdaSoftmax():
 
         # need to check if this is correct?
         if found_indices_num < k:
-            # required_indices_num = k - found_indices_num
-            # print("k - topk_len:", required_indices_num)
-
             mu_exact = np.multiply(d_used[solution_mask], mu[solution_mask])
 
-            """
-            def sample_exact(a, x, start_point):
-              inner_product = a[start_point:].dot(x[start_point:])
-              return inner_product
-
-            sample_exact_mat = np.vectorize(pyfunc=sample_exact, signature="(n),(d),()->()")
-
-            mu_exact = (mu_exact + dim * sample_exact_mat(atoms[solution_mask], query, d_used[solution_mask])) / dim
-            """
             tmp = np.empty(np.sum(solution_mask))
 
             for i, atom_index in enumerate(solutions):
@@ -128,9 +132,6 @@ class AdaSoftmax():
                 found_indices_num += 1
                 mu_exact_search[best_index] = -np.inf
 
-            # best_indices_tail_np = np.array(best_indices_tail)
-
-            # best_ind = np.append(topk_indices, best_indices_tail_np)
             mu[solutions] = mu_exact
 
             n_samples += np.sum(dim - d_used[solution_mask])
@@ -139,6 +140,8 @@ class AdaSoftmax():
         return best_ind, n_samples, mu, d_used
 
     def estimate_softmax_normalization_warm(self, atoms, query, beta, epsilon, delta, sigma, bruteforce=False):
+        #TODO: when T0=d, return bruteforce
+
         n = atoms.shape[0]
         d = query.shape[0]
         used_samples = 0
@@ -151,18 +154,17 @@ class AdaSoftmax():
         #Maybe this is better?
         #mu_hat -= np.min(mu_hat)
 
-        mu_hat_aux = (mu_hat - np.max(mu_hat) - C) * beta
-
-        # mu_hat_exp = np.exp((mu_hat - C) * beta, dtype=np.float64)
+        #mu_hat_aux = (mu_hat - np.max(mu_hat) - C) * beta
+        mu_hat_aux = (mu_hat - C) * beta
         mu_hat_exp_alpha = np.exp(mu_hat_aux)
         alpha = mu_hat_exp_alpha / np.sum(mu_hat_exp_alpha)
 
         mu_hat_exp_gamma = np.exp(mu_hat_aux / 2)
         gamma = mu_hat_exp_gamma / np.sum(mu_hat_exp_gamma)
 
-        T = beta**2 * sigma**2 (
+        T = beta**2 * sigma**2 * (
                 17 * np.log((6 * n) / delta) * n
-                + (32 * np.log((6 * n) / delta) * n) / epsilon
+                + (32 * np.log((6 * n) / delta) * n * np.sum(mu_hat_exp_gamma)**2) / epsilon * np.sum(mu_hat_exp_alpha)
                 + (16 * np.log(12 / delta)) / epsilon ** 2
         )
 
@@ -177,13 +179,10 @@ class AdaSoftmax():
         for i in range(n):
             mu_hat_refined_aux[i] = atoms[i, T0:T0 + n_samples[i]] @ query[T0:T0 + n_samples[i]]
 
-        mu_hat_refined = np.divide(mu_hat * T0 + mu_hat_refined_aux * d, n_samples)
+        mu_hat_refined = np.divide(mu_hat * T0 + mu_hat_refined_aux * d, np.maximum(n_samples, 1))
 
-        #mu_hat_max_element = np.max(mu_hat_refined)
+        #mu_hat_refined -= np.max(mu_hat_refined)
 
-        mu_hat_refined -= np.max(mu_hat_refined)
-
-        # mu_hat_refined_exp = np.exp(beta * mu_hat_refined, dtype=np.float64)
         mu_hat_refined_exp = np.exp(beta * mu_hat_refined)
         S_hat = np.sum(mu_hat_refined_exp)
 
@@ -192,14 +191,12 @@ class AdaSoftmax():
         #Potential hazard: max value of mu_hat for alpha construction and max value of mu hat for S_hat estimation is different, which may result in incorrect sampling or other problems?
 
     # adaSoftmax with warm start
-    def ada_softmax(self, A, x, beta, epsilon, delta, sigma, k, bruteforce=False, return_estimates=False):
+    def ada_softmax(self, A, x, beta, epsilon, delta, n_sigma_sample, k):
 
-        S_hat, mu_hat, budget_vec = self.estimate_softmax_normalization_warm(A, x, beta, epsilon / 2, delta / 3, sigma,
-                                                                        bruteforce=bruteforce)
+        #TODO: repleace this with empirical bernstein bound, extend "warm start" to the sigma approximation layer
+        sigma = self.approx_sigma_bound(A, x, n_sigma_sample)
 
-        normalization_budget = np.sum(budget_vec)
-
-        # print("normalization budget:", normalization_budget)
+        S_hat, mu_hat, budget_vec = self.estimate_softmax_normalization_warm(A, x, beta, epsilon / 2, delta / 3, sigma)
 
         best_index_hat, budget_mip, mu_hat, budget_vec = self.compute_mip_batch_topk_ver2_warm(A, x, sigma, delta / 3,
                                                                                           batch_size=16, k=k, mu=mu_hat,
@@ -207,22 +204,10 @@ class AdaSoftmax():
 
         best_index_hat = best_index_hat[:k]
 
-        budget_mip = np.sum(budget_vec) - normalization_budget
-
-        # print("mip budget:", budget_mip)
-
         n_arm_pull = min(
             math.ceil(8 * sigma ** 2 * beta ** 2 * np.log(6 / delta) / epsilon ** 2),
             x.shape[0]
         )
-
-        if bruteforce:
-            n_arm_pull = x.shape[0]
-
-        # budget_spent_best_arm = budget_vec[best_index_hat]
-
-        # A_subset = A[best_index_hat]
-        #mu_best_hat = mu_hat[best_index_hat]
 
         mu_additional = np.empty(k)
 
