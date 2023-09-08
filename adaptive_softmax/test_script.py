@@ -11,8 +11,8 @@ N_FEATURES = int(1e+6)
 N_DATA = 100
 TEMP = 1
 NUM_EXPERIMENTS = 1000
-element_mu = 0
-element_sigma = 5e-1
+element_mu = 1e+3
+element_sigma = 5e-5
 
 class CustomSoftmax(torch.autograd.Function):
     @staticmethod

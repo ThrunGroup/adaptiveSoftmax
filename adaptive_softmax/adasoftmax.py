@@ -151,16 +151,21 @@ class AdaSoftmax():
         mu_hat = (d / T0) * (atoms[:, :T0] @ query[:T0])
         C = (2 * sigma ** 2 * np.log(6 * n / delta) / T0) ** 0.5
 
+        n_samples = np.zeros(n, dtype=np.int64) + T0
+
         #Maybe this is better?
         #mu_hat -= np.min(mu_hat)
 
-        #mu_hat_aux = (mu_hat - np.max(mu_hat) - C) * beta
         mu_hat_aux = (mu_hat - C) * beta
+        mu_hat_aux -= np.max(mu_hat_aux)
+        #mu_hat_aux = (mu_hat - C) * beta
         mu_hat_exp_alpha = np.exp(mu_hat_aux)
         alpha = mu_hat_exp_alpha / np.sum(mu_hat_exp_alpha)
 
         mu_hat_exp_gamma = np.exp(mu_hat_aux / 2)
         gamma = mu_hat_exp_gamma / np.sum(mu_hat_exp_gamma)
+
+        #import ipdb; ipdb.set_trace()
 
         T = beta**2 * sigma**2 * (
                 17 * np.log((6 * n) / delta) * n
@@ -168,22 +173,18 @@ class AdaSoftmax():
                 + (16 * np.log(12 / delta)) / epsilon ** 2
         )
 
-        n_samples = np.ceil(np.minimum((alpha + gamma) * T, d)).astype(np.int64)
-
-        if bruteforce:
-            n_samples = np.zeros(n, dtype=np.int64)
-            n_samples += d
+        n_samples = np.ceil(np.minimum((alpha + gamma) * T + T0, d)).astype(np.int64)
 
         mu_hat_refined_aux = np.empty(n)
 
         for i in range(n):
             mu_hat_refined_aux[i] = atoms[i, T0:T0 + n_samples[i]] @ query[T0:T0 + n_samples[i]]
 
-        mu_hat_refined = np.divide(mu_hat * T0 + mu_hat_refined_aux * d, np.maximum(n_samples, 1))
+        mu_hat_refined = np.divide(mu_hat * T0 + mu_hat_refined_aux * d, np.maximum(n_samples, 1)) * beta
 
-        #mu_hat_refined -= np.max(mu_hat_refined)
+        mu_hat_refined -= np.max(mu_hat_refined)
 
-        mu_hat_refined_exp = np.exp(beta * mu_hat_refined)
+        mu_hat_refined_exp = np.exp(mu_hat_refined)
         S_hat = np.sum(mu_hat_refined_exp)
 
         return S_hat, mu_hat_refined, n_samples
