@@ -335,8 +335,8 @@ for dim_constant in range(0, 101):
 
   #print(A_ndarray @ x_ndarray)
 
-  epsilon = 0.01
-  delta = 0.01
+  epsilon = 0.1
+  delta = 0.1
   top_k = 1
 
   for seed in range(NUM_EXPERIMENTS):
