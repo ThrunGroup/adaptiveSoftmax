@@ -388,8 +388,8 @@ for dim_constant in range(0, 101):
   adaptive_time_list.append(adaptive_time_mean)
   budget_list.append(budget_mean)
 
-plt.plot(dimension_list, budget_list, color="red", label="adaptive_softmax")
-plt.plot(dimension_list, N_CLASSES * np.array(dimension_list), color="blue", label="naive")
+plt.plot(dimension_list, budget_list, "r--.", label="adaptive_softmax")
+plt.plot(dimension_list, N_CLASSES * np.array(dimension_list), "b--.", label="naive")
 plt.legend()
 plt.xlabel("dimension(n_features)")
 plt.ylabel("number of samples taken")
