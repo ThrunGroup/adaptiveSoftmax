@@ -6,20 +6,50 @@ import numpy as np
 from time import time
 import matplotlib.pyplot as plt
 from numba import njit
+from torchvision import datasets, transforms
+import ssl
+ssl._create_default_https_context = ssl._create_unverified_context
 
 N_CLASSES = 10
 #N_FEATURES = int(1e+6)
 N_FEATURES = 0
 N_DATA = 100
 TEMP = 1
-NUM_EXPERIMENTS = 100
 element_mu = 0
 element_sigma = 1e-4
 signal_strength = 5e+2
 
-def get_data():
 
+def get_data(n_repetition):
+    EuroSAT_Train = datasets.EuroSAT(root="./data/",
+                                 download=True,
+                                 transform=transforms.ToTensor())
+
+    data = list()
+    labels = list()
+
+    for i in range(27000):
+        datum, label = EuroSAT_Train[i]
+
+        flattened_datum_l = list()
+
+        for color_channel in datum:
+          for row in color_channel:
+            flattened_datum_l.append(row)
+
+        flattened_datum_l = n_repetition * flattened_datum_l
+
+        flattened_datum = torch.nn.functional.normalize(torch.cat(flattened_datum_l).float(), dim=0)
+        flattened_datum = (1 / n_repetition) * flattened_datum
+
+
+        data.append(flattened_datum)
+        labels.append(label)
+
+    data = torch.stack(data).float()
+    labels = torch.Tensor(labels).long()
     return data, labels
+
 
 @njit
 def approx_sigma_bound_nb(A, x, n_sigma_sample):
@@ -28,12 +58,10 @@ def approx_sigma_bound_nb(A, x, n_sigma_sample):
     A_subset, x_subset = A[:, :n_sigma_sample], x[:n_sigma_sample]
 
     elmul = np.multiply(A[:, :n_sigma_sample], x[:n_sigma_sample])
-    #sigma = np.sqrt(np.mean(np.square(elmul.T - np.mean(elmul, axis=1)), axis=0))
-    arm_pull_mean = (A_subset @ x_subset) / n_sigma_sample
 
     sigma = np.empty(n_arms)
     for i in range(n_arms):
-        sigma[i] = np.sqrt(np.mean(np.square(elmul[i] - arm_pull_mean[i])))
+        sigma[i] = np.std(elmul[i])
 
     return x.shape[0] * np.max(sigma)
 
@@ -159,6 +187,8 @@ def estimate_softmax_normalization_warm_nb(atoms, query, beta, epsilon, delta, s
 
     T0 = int(min(np.ceil(17 * beta ** 2 * sigma ** 2 * np.log(6 * n / delta)), d))
 
+    #print("T0:", T0)
+
     mu_hat = (d / T0) * (atoms[:, :T0] @ query[:T0])
     C = (2 * sigma ** 2 * np.log(6 * n / delta) / T0) ** 0.5
 
@@ -177,12 +207,14 @@ def estimate_softmax_normalization_warm_nb(atoms, query, beta, epsilon, delta, s
     gamma = mu_hat_exp_gamma / np.sum(mu_hat_exp_gamma)
 
     #import ipdb; ipdb.set_trace()
+    T1 = 17 * np.log((6 * n) / delta) * n
+    T2 = (32 * np.log((6 * n) / delta) * n * np.sum(mu_hat_exp_gamma)**2) / (epsilon * np.sum(mu_hat_exp_alpha))
+    T3 = (16 * np.log(12 / delta)) / (epsilon ** 2)
 
-    T = beta**2 * sigma**2 * (
-            17 * np.log((6 * n) / delta) * n
-            + (32 * np.log((6 * n) / delta) * n * np.sum(mu_hat_exp_gamma)**2) / epsilon * np.sum(mu_hat_exp_alpha)
-            + (16 * np.log(12 / delta)) / epsilon ** 2
-    )
+    T = beta**2 * sigma**2 * (T1 + T2 + T3)
+
+    #Experimental changes
+    #normalized_sampling_distribution = (alpha + gamma) / np.sum(alpha + gamma)
 
     n_samples = np.ceil(np.minimum((alpha + gamma) * T + T0, d)).astype(np.int64)
 
@@ -193,7 +225,7 @@ def estimate_softmax_normalization_warm_nb(atoms, query, beta, epsilon, delta, s
 
     mu_hat_refined = np.divide(mu_hat * T0 + mu_hat_refined_aux * d, np.maximum(n_samples, 1)) * beta
 
-    mu_hat_refined -= np.max(mu_hat_refined)
+    #mu_hat_refined -= np.max(mu_hat_refined)
 
     mu_hat_refined_exp = np.exp(mu_hat_refined)
     S_hat = np.sum(mu_hat_refined_exp)
@@ -213,31 +245,41 @@ def ada_softmax_nb(A, x, beta, epsilon, delta, n_sigma_sample, k):
 
     S_hat, mu_hat, budget_vec = estimate_softmax_normalization_warm_nb(A, x, beta, epsilon / 2, delta / 3, sigma)
 
+    #print("S estimate:", S_hat)
+
+    #print("denominator budget:", np.sum(budget_vec))
+
     best_index_hat, budget_mip, mu_hat, budget_vec = compute_mip_batch_topk_ver2_warm_nb(A, x, sigma, delta / 3,
                                                                                       batch_size=16, k=k, mu=mu_hat,
                                                                                       budget_vec=budget_vec)
 
+    #print("denominator + best arm identification:", np.sum(budget_vec))
+
     best_index_hat = best_index_hat[:k]
 
     n_arm_pull = int(min(
-        np.ceil(288 * sigma ** 2 * beta ** 2 * np.log(6 / delta) / epsilon ** 2),
+        np.ceil((288 * sigma ** 2 * beta ** 2 * np.log(6 / delta)) / (epsilon ** 2)),
         x.shape[0]
     ))
 
-    mu_additional = np.empty(k)
+    #mu_additional = np.empty(k)
 
-    for i, arm_index in enumerate(best_index_hat):
-        mu_additional[i] = A[arm_index, budget_vec[arm_index]: n_arm_pull] @ x[budget_vec[arm_index]: n_arm_pull]
+    for arm_index in best_index_hat:
+        mu_additional = A[arm_index, budget_vec[arm_index]: n_arm_pull] @ x[budget_vec[arm_index]: n_arm_pull]
+        mu_hat[arm_index] = (mu_hat[arm_index] * budget_vec[arm_index] + x.shape[0] * mu_additional) / max(budget_vec[arm_index], n_arm_pull, 1)
 
-    mu_hat[best_index_hat] += np.divide(x.shape[0] * mu_additional, np.maximum(1, n_arm_pull - budget_vec[best_index_hat]))
+    #mu_hat[best_index_hat] += np.divide(x.shape[0] * mu_additional, np.maximum(1, n_arm_pull - budget_vec[best_index_hat]))
 
     budget_vec[best_index_hat] = np.maximum(budget_vec[best_index_hat], n_arm_pull)
+
+    #print("total_budget:", np.sum(budget_vec))
 
     # y_best_hat = np.exp(beta * (mu_best_hat), dtype=np.float64)
     y_best_hat = np.exp(beta * (mu_hat))
     budget = np.sum(budget_vec)
+    z = y_best_hat / S_hat
 
-    return best_index_hat, y_best_hat / S_hat, budget
+    return best_index_hat, z, budget
 
 class CustomSoftmax(torch.autograd.Function):
     @staticmethod
@@ -255,11 +297,11 @@ class CustomSoftmax(torch.autograd.Function):
 
 
 class SimpleModel(torch.nn.Module):
-    def __init__(self, temperature):
+    def __init__(self, temperature, data_dim, n_class):
         # simple classification model --> linear layer + softmax
         super().__init__()
         self.temperature = temperature
-        self.linear = torch.nn.Linear(N_FEATURES, N_CLASSES, bias=False, dtype=torch.double)
+        self.linear = torch.nn.Linear(data_dim, n_class, bias=False, dtype=torch.float)
         #self.softmax = CustomSoftmax.apply
         self.softmax = torch.nn.Softmax()
 
@@ -274,8 +316,11 @@ class SimpleModel(torch.nn.Module):
             out = self.linear(x)
         return out
 
-    def scale_linear_weight(self, scalar):
-      self.linear.weight = torch.nn.parameter.Parameter(self.linear.weight * scalar)
+    def get_linear_weight(self):
+        return self.linear.weight.detach()
+
+    def set_linear_weight(self, weight):
+        self.linear.weight = torch.nn.parameter.Parameter(weight)
 
 """
 def generate_data(shape, mu=0.0, std=0.5, bounds=(-1, 1), spiky_num = 0, spike_constant = 1):
@@ -288,6 +333,7 @@ def generate_data(shape, mu=0.0, std=0.5, bounds=(-1, 1), spiky_num = 0, spike_c
 
 
 def train(data, labels, model, max_iter=100):
+    print("training")
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
 
@@ -305,16 +351,27 @@ def train(data, labels, model, max_iter=100):
             optimizer.step()
             running_loss += loss.item()
 
+NUM_EXPERIMENTS = 50
+NUM_DIMENSIONS = 50
+
+
 dimension_list = list()
 naive_time_list = list()
 adaptive_time_list = list()
 budget_list = list()
+sigma_list = list()
 
-base_dim = int(2e+4)
+data, labels = get_data(1)
 
-signal_strength = 5e+2
+data = data[:100]
+labels = labels[:100]
+model = SimpleModel(TEMP, data.shape[1], N_CLASSES)
+train(data, labels, model, max_iter=5)
 
-for dim_constant in range(0, 21):
+A = model.get_linear_weight()
+original_A = A.detach()
+
+for dim_constant in range(1, NUM_DIMENSIONS + 1):
   print("dim constant:", dim_constant)
   naive_time_list_aux = list()
   adaptive_time_list_aux = list()
@@ -324,32 +381,22 @@ for dim_constant in range(0, 21):
   budget_sum = 0
   error_sum = 0
   time_dif_sum = 0
-  N_FEATURES = dim_constant * int(1e+4) + base_dim
   naive_time_sum = 0
   adaptive_time_sum = 0
 
-  model = SimpleModel(TEMP)
-  np.random.seed(dim_constant)
-  """
-  A_initial = torch.Tensor(list(model.parameters())[0].detach())
-  data = signal_strength * A_initial.repeat(N_DATA // N_CLASSES, 1)
-
-  labels = (torch.arange(N_CLASSES)).repeat(N_DATA // N_CLASSES)
-  """
-  data, labels = get_data()
-  train(data, labels, model, max_iter=20)
-
-  A = list(model.parameters())[0]
+  new_data = torch.cat(tuple([data]*dim_constant), 1)
+  model = SimpleModel(TEMP, new_data.shape[1], N_CLASSES)
+  train(new_data, labels, model, max_iter=30)
+  A = model.get_linear_weight()
   A_ndarray = A.detach().numpy()
 
+
   epsilon = 0.1
-  delta = 0.1
+  delta = 0.01
   top_k = 1
 
   for seed in range(NUM_EXPERIMENTS):
-    if seed % 10 == 0:
-      print(seed)
-    x = data[seed % N_DATA]
+    x = new_data[seed % N_DATA]
     x_ndarray = x.detach().numpy()
 
     mu = A_ndarray @ x_ndarray
@@ -367,19 +414,19 @@ for dim_constant in range(0, 21):
     # AdaSoftmax
 
     adaptive_start_time = time()
-    bandit_topk_indices, z_hat, bandit_budget = ada_softmax_nb(A_ndarray, x_ndarray, TEMP, epsilon, delta, N_FEATURES, top_k)
+    bandit_topk_indices, z_hat, bandit_budget = ada_softmax_nb(A_ndarray, x_ndarray, TEMP, epsilon, delta, dim_constant * data.shape[1], top_k)
     adaptive_time = time() - adaptive_start_time
     adaptive_time_sum += adaptive_time
 
     adaptive_time_list_aux.append(adaptive_time)
 
-    numpy_z = z.detach().numpy()[bandit_topk_indices]
+    numpy_z = z.detach().numpy()[labels]
 
     cur_epsilon = np.abs(z_hat[bandit_topk_indices] - np.max(numpy_z)) / np.max(numpy_z)
 
-    error_sum += cur_epsilon[0]
-
-    if cur_epsilon > epsilon:
+    if cur_epsilon[0] <= epsilon and bandit_topk_indices[0] == labels[seed % N_DATA]: #ASSUMING K=1
+      error_sum += cur_epsilon[0]
+    else:
       wrong_approx_num += 1
 
     budget_list_aux.append(bandit_budget)
@@ -388,8 +435,8 @@ for dim_constant in range(0, 21):
   average_budget = budget_sum / NUM_EXPERIMENTS
   imp_epsilon = error_sum / NUM_EXPERIMENTS
 
-  naive_time_mean = np.mean(np.sort(np.array(naive_time_list_aux))[int(0.05 * NUM_EXPERIMENTS) : int(0.95 * NUM_EXPERIMENTS)])
-  adaptive_time_mean = np.mean(np.sort(np.array(adaptive_time_list_aux))[int(0.05 * NUM_EXPERIMENTS) : int(0.95 * NUM_EXPERIMENTS)])
+  #naive_time_mean = np.mean(np.sort(np.array(naive_time_list_aux))[int(0.05 * NUM_EXPERIMENTS) : int(0.95 * NUM_EXPERIMENTS)])
+  #adaptive_time_mean = np.mean(np.sort(np.array(adaptive_time_list_aux))[int(0.05 * NUM_EXPERIMENTS) : int(0.95 * NUM_EXPERIMENTS)])
   #budget_mean = np.mean(np.sort(np.array(budget_list_aux))[int(0.05 * NUM_EXPERIMENTS) : int(0.95 * NUM_EXPERIMENTS)])
   budget_mean = np.mean(budget_list_aux)
 
@@ -401,12 +448,12 @@ for dim_constant in range(0, 21):
   print("=>wrong_approx_num:", wrong_approx_num)
 
   dimension_list.append(N_FEATURES)
-  naive_time_list.append(naive_time_mean)
-  adaptive_time_list.append(adaptive_time_mean)
+  #naive_time_list.append(naive_time_mean)
+  #adaptive_time_list.append(adaptive_time_mean)
   budget_list.append(budget_mean)
 
-plt.plot(dimension_list, budget_list, "r--.", label="adaptive_softmax")
-plt.plot(dimension_list, N_CLASSES * np.array(dimension_list), "b--.", label="naive")
+plt.plot(12288 * np.arange(1, NUM_DIMENSIONS + 1), budget_list, "r--.", label="adaptive_softmax")
+plt.plot(12288 * np.arange(1, NUM_DIMENSIONS + 1), N_CLASSES * 12288 * np.arange(1, NUM_DIMENSIONS + 1), "b--.", label="naive")
 plt.legend()
 plt.xlabel("dimension(n_features)")
 plt.ylabel("number of samples taken")
