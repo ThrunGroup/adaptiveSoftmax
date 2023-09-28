@@ -109,7 +109,7 @@ def estimate_softmax_normalization_adaptive_lv2(A, x, beta, epsilon, delta, sigm
 
     T0 = max(int(min(np.ceil(17 * beta ** 2 * sigma ** 2 * np.log(6 * n / delta)), d)), 1)
     budget_vec = np.full(n, T0)
-    budget = n * T0
+    budget = T0
 
     mu_hat = (d / T0) * A[:, : T0] @ x[: T0]
     CI = np.sqrt(2 * sigma**2 * np.log(6*n/delta) / T0)
