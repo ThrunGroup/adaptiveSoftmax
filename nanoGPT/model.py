@@ -199,17 +199,17 @@ class GPT(nn.Module):
                 beta = 1 / temperature
                 epsilon = 0.1
                 delta = 0.1
-                sigma = 100.0
+                n_sigma_sample = x.shape[0]
 
                 #TODO: make numpy to exploit GPU
-                A_matrix = self.lm_head.weight.detach().cpu().numpy()    # (65, 128)
+                A_matrix = self.lm_head.weight.detach()    # (65, 128)
                 k = A_matrix.shape[0] if top_k is None else min(A_matrix.shape[0], top_k)
                 #k = A_matrix.shape[0]
-                x = x.detach().cpu().numpy()  # (1, 1, 128)
+                x = x.detach()  # (1, 1, 128)
                 prob_list = list()
                 for batch in range(x.shape[0]):
-                    best_indices, prob, budget = algo.ada_softmax(A_matrix, x[batch, -1], beta, epsilon, delta, sigma, k)
-                    prob_list.append(torch.from_numpy(prob))
+                    best_indices, prob, budget = algo.ada_softmax(A_matrix, x[batch, -1], beta, epsilon, delta, n_sigma_sample, k)
+                    prob_list.append(prob)
 
                 return torch.stack(prob_list).to(torch.device("cuda:0")), None
             else:
