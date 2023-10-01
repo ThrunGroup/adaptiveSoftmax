@@ -14,16 +14,16 @@ class AdaSoftmax():
     def approx_sigma_bound(self, A, x, n_sigma_sample):
         #NOTE: We're returning sigma as a sub-gaussian parameter(std of arm pull, not aij*xj)
         n_arms = A.shape[0]
-        A_subset, x_subset = A[:, :n_sigma_sample], x[:n_sigma_sample]
 
-        elmul = torch.mul(A[:, :n_sigma_sample], x[:n_sigma_sample])
+        elmul = np.multiply(A[:, :n_sigma_sample].detach().cpu().numpy(), x[:n_sigma_sample].detach().cpu().numpy())
 
-        sigma = torch.empty(n_arms)
+        sigma = np.empty(n_arms)
         for i in range(n_arms):
-            #sigma[i] = np.std(np.array(elmul[i]))
-            sigma[i] = torch.std(elmul[i])
+            sigma[i] = np.std(elmul[i])
 
-        return x.shape[0] * torch.max(sigma).item()
+        #import ipdb; ipdb.set_trace()
+
+        return x.shape[0] * np.max(sigma)
 
     def compute_mip_batch_topk_ver2_warm(self, atoms, query, sigma, delta, batch_size=16, k=1, mu=None, budget_vec=None):
         """
@@ -52,10 +52,12 @@ class AdaSoftmax():
         max_mu = mu[max_index]
         C = torch.div(sigma * torch.sqrt(2 * torch.log(4 * n_atoms * d_used ** 2 / delta)),
                     d_used + 1) if d_used is not None else torch.zeros(n_atoms)
-        solution_mask = torch.ones(n_atoms).int() & (
-                    mu + C >= max_mu - C[max_index]) if mu is not None else torch.ones(n_atoms)
+        solution_mask = torch.ones(n_atoms).bool() & (
+                    mu + C >= max_mu - C[max_index]) if mu is not None else torch.ones(n_atoms).bool()
         solutions = torch.nonzero(solution_mask, as_tuple=True)[0]
         # topk_indices = np.array([], dtype=np.int64)
+
+        #import ipdb; ipdb.set_trace()
 
         if len(solutions) <= k:
             # topk_indices = np.append(topk_indices, solutions)
@@ -66,7 +68,7 @@ class AdaSoftmax():
             max_index = solutions[torch.argmax(mu[solution_mask])]
             max_mu = mu[max_index]
 
-        C = torch.divide(sigma * torch.sqrt(2 * torch.log(4 * n_atoms * d_used ** 2 / delta)), d_used + 1)
+        C = torch.div(sigma * torch.sqrt(2 * torch.log(4 * n_atoms * d_used ** 2 / delta)), d_used + 1)
 
         solution_mask_before = solution_mask
 
@@ -110,6 +112,7 @@ class AdaSoftmax():
 
         # need to check if this is correct?
         if found_indices_num < k:
+
             mu_exact = torch.mul(d_used[solution_mask], mu[solution_mask])
 
             tmp = torch.empty(torch.sum(solution_mask))
@@ -120,7 +123,7 @@ class AdaSoftmax():
             mu_exact = (mu_exact + tmp) / dim
 
             # TODO: is there a way to avoid copy?
-            mu_exact_search = mu_exact.detach()
+            mu_exact_search = mu_exact.clone().detach()
 
             while found_indices_num < k:
                 best_index = torch.argmax(mu_exact_search)
@@ -141,6 +144,8 @@ class AdaSoftmax():
         n = atoms.shape[0]
         d = query.shape[0]
         used_samples = 0
+
+        #import ipdb; ipdb.set_trace()
 
         T0 = int(min(math.ceil(17 * beta ** 2 * sigma ** 2 * math.log(6 * n / delta)), d))
 
@@ -182,7 +187,10 @@ class AdaSoftmax():
 
         mu_hat_refined = torch.div(mu_hat * T0 + mu_hat_refined_aux * d, torch.maximum(n_samples, torch.ones(n))) * beta
 
-        #mu_hat_refined -= np.max(mu_hat_refined)
+        mu_hat_refined = mu_hat_refined - torch.max(mu_hat_refined).item()
+        #max_logit = torch.max(mu_hat_refined).item()
+        #max_logit = 0
+        #import ipdb; ipdb.set_trace()
 
         mu_hat_refined_exp = torch.exp(mu_hat_refined)
         S_hat = torch.sum(mu_hat_refined_exp)
@@ -198,18 +206,26 @@ class AdaSoftmax():
         sigma = self.approx_sigma_bound(A, x, n_sigma_sample)
 
         #print(sigma)
+        print(sigma)
 
         S_hat, mu_hat, budget_vec = self.estimate_softmax_normalization_warm(A, x, beta, epsilon / 2, delta / 3, sigma)
+
+        #print(torch.max(mu_hat), S_hat, torch.sum(budget_vec) / 50257)
+
+        #import ipdb; ipdb.set_trace()
 
         #print("S estimate:", S_hat)
 
         #print("denominator budget:", torch.sum(budget_vec))
+        print("estimate1:", torch.argmax(mu_hat))
+        print(torch.sum(budget_vec).item() / 50257)
 
         best_index_hat, budget_mip, mu_hat, budget_vec = self.compute_mip_batch_topk_ver2_warm(A, x, sigma, delta / 3,
                                                                                         batch_size=16, k=k, mu=mu_hat,
                                                                                         budget_vec=budget_vec)
 
         #print("denominator + best arm identification:", torch.sum(budget_vec))
+        print("estimate2:", torch.argmax(mu_hat), best_index_hat)
 
         best_index_hat = best_index_hat[:k]
 

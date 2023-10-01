@@ -1,1 +1,1 @@
-python sample.py --init_from=gpt2 --start="Thermodynamics " --num_samples=1 --max_new_tokens=1 --is_adaptive=True
+python sample.py --init_from=gpt2 --start="Thermodynamics" --num_samples=1 --max_new_tokens=1 --is_adaptive=True

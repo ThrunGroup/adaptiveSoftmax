@@ -199,22 +199,31 @@ class GPT(nn.Module):
                 beta = 1 / temperature
                 epsilon = 0.1
                 delta = 0.1
-                n_sigma_sample = x.shape[0]
+                #sigma = 100.0
 
                 #TODO: make numpy to exploit GPU
-                A_matrix = self.lm_head.weight.detach()    # (65, 128)
+                A_matrix = self.lm_head.weight.detach().cpu()    # (65, 128)
                 k = A_matrix.shape[0] if top_k is None else min(A_matrix.shape[0], top_k)
                 #k = A_matrix.shape[0]
-                x = x.detach()  # (1, 1, 128)
+                x = x.detach().cpu()  # (1, 1, 128)
+                n_sigma_sample = x.shape[-1]
                 prob_list = list()
                 for batch in range(x.shape[0]):
                     best_indices, prob, budget = algo.ada_softmax(A_matrix, x[batch, -1], beta, epsilon, delta, n_sigma_sample, k)
+
+                    #TODO: perhaps a better implementation for this?
+                    zeroing_index = torch.ones(A_matrix.shape[0]).bool()
+                    zeroing_index[best_indices] = False
+                    prob[zeroing_index] = 0
+                    prob /= torch.sum(prob).item()         
+
                     prob_list.append(prob)
 
                 return torch.stack(prob_list).to(torch.device("cuda:0")), None
             else:
                 # inference-time mini-optimization: only forward the lm_head on the very last position
                 logits = self.lm_head(x) # note: using list [-1] to preserve the time dim
+                #import ipdb; ipdb.set_trace()
                 loss = None
 
         return logits, loss
@@ -342,22 +351,30 @@ class GPT(nn.Module):
             # forward the model to get the logits for the index in the sequence
             if is_adaptive:
                 probs, _ = self(idx_cond, top_k, temperature=temperature, is_adaptive=is_adaptive)
+                #probs = torch.where(probs >= 1e-2, probs, 0)
+                #import ipdb; ipdb.set_trace()
             else:
                 logits, _ = self(idx_cond, is_adaptive=is_adaptive)     # (1, 1, 65)
                 # pluck the logits at the final step and scale by desired temperature
                 logits = logits[:, -1, :] / temperature
+                print(torch.max(logits))
                 # optionally crop the logits to only the top k options
                 if top_k is not None:
                     v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
                     logits[logits < v[:, [-1]]] = -float('Inf')
+                    #import ipdb; ipdb.set_trace()
                 # apply softmax to convert logits to (normalized) probabilities
+                print(torch.max(logits))
                 probs = F.softmax(logits, dim=-1)   # (1, 64)
 
+                print(torch.max(probs))
                 #import ipdb; ipdb.set_trace()
-                
 
-            #import ipdb; ipdb.set_trace()
+                #import ipdb; ipdb.set_trace()    
+
             # sample from the distribution
+
+            print("probs:", probs)
 
             idx_next = torch.multinomial(probs, num_samples=1)
 
