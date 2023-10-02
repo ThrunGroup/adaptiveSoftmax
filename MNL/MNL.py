@@ -72,8 +72,7 @@ def compute_mip_batch_topk_ver2_warm_nb(atoms, query, sigma, delta, batch_size=1
     it sequentially slices 'batch_size' elements from left to right, and performs inner product to
     pull an arm.
     """
-    # TODO: divide-by-zero occurs on calculating confidence bound(C) when "large" number of sampling happened in normalization estimation.
-    # Need to pinpoint the cause.
+    # TODO: Fix bruteforce failsafe(Refer to GPT implementation)
 
     dim = len(query)
     n_atoms = len(atoms)

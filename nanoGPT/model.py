@@ -383,6 +383,8 @@ class GPT(nn.Module):
 
             idx_next = torch.multinomial(probs, num_samples=1)
 
+            print(idx_next)
+
             # append sampled index to the running sequence and continue
             idx = torch.cat((idx, idx_next), dim=1)
 
