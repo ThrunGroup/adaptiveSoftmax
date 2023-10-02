@@ -25,7 +25,7 @@ class AdaSoftmax():
 
         return x.shape[0] * np.max(sigma)
 
-    def compute_mip_batch_topk_ver2_warm(self, atoms, query, sigma, delta, batch_size=16, k=1, mu=None, budget_vec=None):
+    def compute_mip_batch_topk_ver2_warm(self, atoms, query, sigma, delta, batch_size=16, k=1, mu=None, budget_vec=None, device='cpu'):
         """
         does same thing as previous, but instead of doing multiplication between single element of A and x,
         it sequentially slices 'batch_size' elements from left to right, and performs inner product to
@@ -37,12 +37,12 @@ class AdaSoftmax():
         dim = len(query)
         n_atoms = len(atoms)
 
-        best_ind = torch.empty(n_atoms)
+        best_ind = torch.empty(n_atoms).to(device)
         found_indices_num = 0
 
         # case where no best-arm identification is needed
         if k == n_atoms:
-            return torch.arange(n_atoms), 0, mu, budget_vec
+            return torch.arange(n_atoms).to(device), 0, mu, budget_vec
 
         d_used = budget_vec
         n_samples = 0  # instrumentation
@@ -50,11 +50,13 @@ class AdaSoftmax():
         mu = mu
         max_index = torch.argmax(mu)
         max_mu = mu[max_index]
+
+        #TODO: C should not be zeros if no samples are taken?
         C = torch.div(sigma * torch.sqrt(2 * torch.log(4 * n_atoms * d_used ** 2 / delta)),
-                    d_used + 1) if d_used is not None else torch.zeros(n_atoms)
-        solution_mask = torch.ones(n_atoms).bool() & (
-                    mu + C >= max_mu - C[max_index]) if mu is not None else torch.ones(n_atoms).bool()
-        solutions = torch.nonzero(solution_mask, as_tuple=True)[0]
+                    d_used + 1) if d_used is not None else torch.zeros(n_atoms).to(device)
+        solution_mask = torch.ones(n_atoms).bool().to(device) & (
+                    mu + C >= max_mu - C[max_index]) if mu is not None else torch.ones(n_atoms).bool().to(device)
+        solutions = torch.nonzero(solution_mask, as_tuple=True)[0].to(device)
 
         #import ipdb; ipdb.set_trace()
         # topk_indices = np.array([], dtype=np.int64)
@@ -149,7 +151,7 @@ class AdaSoftmax():
 
         return best_ind.int(), mu, d_used
 
-    def estimate_softmax_normalization_warm(self, atoms, query, beta, epsilon, delta, sigma, bruteforce=False):
+    def estimate_softmax_normalization_warm(self, atoms, query, beta, epsilon, delta, sigma, bruteforce=False, device='cpu'):
         #TODO: when T0=d, return bruteforce
 
         n = atoms.shape[0]
@@ -189,14 +191,14 @@ class AdaSoftmax():
         #Experimental changes
         #normalized_sampling_distribution = (alpha + gamma) / np.sum(alpha + gamma)
 
-        n_samples = torch.ceil(torch.minimum((alpha + gamma) * T + T0, torch.full((n,), d))).int()
+        n_samples = torch.ceil(torch.minimum((alpha + gamma) * T + T0, torch.full((n,), d).to(device))).int()
 
-        mu_hat_refined_aux = torch.empty(n)
+        mu_hat_refined_aux = torch.empty(n).to(device)
 
         for i in range(n):
             mu_hat_refined_aux[i] = atoms[i, T0:T0 + n_samples[i]] @ query[T0:T0 + n_samples[i]]
 
-        mu_hat_refined = torch.div(mu_hat * T0 + mu_hat_refined_aux * d, torch.maximum(n_samples, torch.ones(n))) * beta
+        mu_hat_refined = torch.div(mu_hat * T0 + mu_hat_refined_aux * d, torch.maximum(n_samples, torch.ones(n).to(device))) * beta
 
         mu_hat_refined = mu_hat_refined - torch.max(mu_hat_refined).item()
         #max_logit = torch.max(mu_hat_refined).item()
@@ -213,13 +215,15 @@ class AdaSoftmax():
     # adaSoftmax with warm start
     def ada_softmax(self, A, x, beta, epsilon, delta, n_sigma_sample, k):
 
+        device = A.device
+
         #TODO: repleace this with empirical bernstein bound, extend "warm start" to the sigma approximation layer
         sigma = self.approx_sigma_bound(A, x, n_sigma_sample)
 
         #print(sigma)
         print(sigma)
 
-        S_hat, mu_hat, budget_vec = self.estimate_softmax_normalization_warm(A, x, beta, epsilon / 2, delta / 3, sigma)
+        S_hat, mu_hat, budget_vec = self.estimate_softmax_normalization_warm(A, x, beta, epsilon / 2, delta / 3, sigma, device=device)
 
         #print(torch.max(mu_hat), S_hat, torch.sum(budget_vec) / 50257)
 
@@ -233,7 +237,8 @@ class AdaSoftmax():
 
         best_index_hat, mu_hat, budget_vec = self.compute_mip_batch_topk_ver2_warm(A, x, sigma, delta / 3,
                                                                                         batch_size=16, k=k, mu=mu_hat,
-                                                                                        budget_vec=budget_vec)
+                                                                                        budget_vec=budget_vec,
+                                                                                        device=device)
 
         #print("denominator + best arm identification:", torch.sum(budget_vec))
         print("estimate2:", torch.argmax(mu_hat), best_index_hat)
@@ -257,7 +262,7 @@ class AdaSoftmax():
         #mu_hat[best_index_hat] += np.divide(x.shape[0] * mu_additional, np.maximum(1, n_arm_pull - budget_vec[best_index_hat]))
 
         #import ipdb; ipdb.set_trace()
-        budget_vec[best_index_hat] = torch.maximum(budget_vec[best_index_hat], torch.full((best_index_hat.shape[0],), n_arm_pull).int())
+        budget_vec[best_index_hat] = torch.maximum(budget_vec[best_index_hat], torch.full((best_index_hat.shape[0],), n_arm_pull).int().to(device))
 
         #print("total_budget:", torch.sum(budget_vec))
 

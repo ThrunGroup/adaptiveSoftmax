@@ -202,10 +202,10 @@ class GPT(nn.Module):
                 #sigma = 100.0
 
                 #TODO: make numpy to exploit GPU
-                A_matrix = self.lm_head.weight.detach().cpu()    # (65, 128)
+                A_matrix = self.lm_head.weight    # (65, 128)
                 k = A_matrix.shape[0] if top_k is None else min(A_matrix.shape[0], top_k)
                 #k = A_matrix.shape[0]
-                x = x.detach().cpu()  # (1, 1, 128)
+                x = x # (1, 1, 128)
                 n_sigma_sample = x.shape[-1]
                 prob_list = list()
                 for batch in range(x.shape[0]):
@@ -221,7 +221,7 @@ class GPT(nn.Module):
 
                     prob_list.append(prob)
 
-                return torch.stack(prob_list).to(torch.device("cuda:0")), None
+                return torch.stack(prob_list), None
             else:
                 # inference-time mini-optimization: only forward the lm_head on the very last position
                 logits = self.lm_head(x) # note: using list [-1] to preserve the time dim
