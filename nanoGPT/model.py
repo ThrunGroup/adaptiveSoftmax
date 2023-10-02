@@ -211,6 +211,8 @@ class GPT(nn.Module):
                 for batch in range(x.shape[0]):
                     best_indices, prob, budget = algo.ada_softmax(A_matrix, x[batch, -1], beta, epsilon, delta, n_sigma_sample, k)
 
+                    #import ipdb; ipdb.set_trace()
+
                     #TODO: perhaps a better implementation for this?
                     zeroing_index = torch.ones(A_matrix.shape[0]).bool()
                     zeroing_index[best_indices] = False
@@ -364,7 +366,8 @@ class GPT(nn.Module):
                     logits[logits < v[:, [-1]]] = -float('Inf')
                     #import ipdb; ipdb.set_trace()
                 # apply softmax to convert logits to (normalized) probabilities
-                print(torch.max(logits))
+                #print(torch.max(logits))
+                #import ipdb; ipdb.set_trace()
                 probs = F.softmax(logits, dim=-1)   # (1, 64)
 
                 print(torch.max(probs))
@@ -375,6 +378,8 @@ class GPT(nn.Module):
             # sample from the distribution
 
             print("probs:", probs)
+
+            #import ipdb; ipdb.set_trace()
 
             idx_next = torch.multinomial(probs, num_samples=1)
 

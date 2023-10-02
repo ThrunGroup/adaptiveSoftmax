@@ -55,6 +55,8 @@ class AdaSoftmax():
         solution_mask = torch.ones(n_atoms).bool() & (
                     mu + C >= max_mu - C[max_index]) if mu is not None else torch.ones(n_atoms).bool()
         solutions = torch.nonzero(solution_mask, as_tuple=True)[0]
+
+        #import ipdb; ipdb.set_trace()
         # topk_indices = np.array([], dtype=np.int64)
 
         #import ipdb; ipdb.set_trace()
@@ -76,6 +78,8 @@ class AdaSoftmax():
 
         while (len(solutions) > brute_force_threshold and found_indices_num < k and torch.max(
                 d_used) < dim - batch_size):  # TODO: computing max everytime may degrade performance
+
+            #TODO: Need to verify this
 
             tmp = torch.empty(torch.sum(solution_mask))
 
@@ -113,14 +117,22 @@ class AdaSoftmax():
         # need to check if this is correct?
         if found_indices_num < k:
 
-            mu_exact = torch.mul(d_used[solution_mask], mu[solution_mask])
+            #mu_exact = torch.mul(d_used[solution_mask], mu[solution_mask])
+            mu_exact = torch.mul(d_used, mu)
 
-            tmp = torch.empty(torch.sum(solution_mask))
+            #tmp = torch.empty(torch.sum(solution_mask))
+            #import ipdb; ipdb.set_trace()
 
             for i, atom_index in enumerate(solutions):
-                tmp[i] = atoms[atom_index, d_used[atom_index]:] @ query[d_used[atom_index]:]
+                mu_exact += atoms[atom_index, d_used[atom_index]:] @ query[d_used[atom_index]:]
 
-            mu_exact = (mu_exact + tmp) / dim
+            d_used[solutions] = dim
+
+            mu = torch.div(mu_exact, d_used)
+
+            #mu[solutions] = mu_exact
+
+            #import ipdb; ipdb.set_trace()
 
             # TODO: is there a way to avoid copy?
             mu_exact_search = mu_exact.clone().detach()
@@ -131,12 +143,11 @@ class AdaSoftmax():
                 found_indices_num += 1
                 mu_exact_search[best_index] = -float('inf')
 
-            mu[solutions] = mu_exact
-
             n_samples += torch.sum(dim - d_used[solution_mask])
-            d_used[solutions] = dim
 
-        return best_ind.int(), n_samples, mu, d_used
+            #import ipdb; ipdb.set_trace()
+
+        return best_ind.int(), mu, d_used
 
     def estimate_softmax_normalization_warm(self, atoms, query, beta, epsilon, delta, sigma, bruteforce=False):
         #TODO: when T0=d, return bruteforce
@@ -220,7 +231,7 @@ class AdaSoftmax():
         print("estimate1:", torch.argmax(mu_hat))
         print(torch.sum(budget_vec).item() / 50257)
 
-        best_index_hat, budget_mip, mu_hat, budget_vec = self.compute_mip_batch_topk_ver2_warm(A, x, sigma, delta / 3,
+        best_index_hat, mu_hat, budget_vec = self.compute_mip_batch_topk_ver2_warm(A, x, sigma, delta / 3,
                                                                                         batch_size=16, k=k, mu=mu_hat,
                                                                                         budget_vec=budget_vec)
 
