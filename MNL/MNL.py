@@ -151,14 +151,15 @@ def compute_mip_batch_topk_ver2_warm_nb(atoms, query, sigma, delta, batch_size=1
 
     # need to check if this is correct?
     if found_indices_num < k:
-        mu_exact = np.multiply(d_used[solution_mask], mu[solution_mask])
+        mu_exact = np.multiply(d_used, mu)
 
-        tmp = np.empty(np.sum(solution_mask))
 
         for i, atom_index in enumerate(solutions):
-            tmp[i] = atoms[atom_index, d_used[atom_index]:] @ query[d_used[atom_index]:]
+            mu_exact[i] = atoms[atom_index, d_used[atom_index]:] @ query[d_used[atom_index]:]
 
-        mu_exact = (mu_exact + tmp) / dim
+        d_used[solutions] = dim
+
+        mu = np.divide(mu_exact, d_used)
 
         # TODO: is there a way to avoid copy?
         mu_exact_search = mu_exact.copy()
@@ -169,10 +170,7 @@ def compute_mip_batch_topk_ver2_warm_nb(atoms, query, sigma, delta, batch_size=1
             found_indices_num += 1
             mu_exact_search[best_index] = -np.inf
 
-        mu[solutions] = mu_exact
-
         n_samples += np.sum(dim - d_used[solution_mask])
-        d_used[solutions] = dim
 
     return best_ind, n_samples, mu, d_used
 

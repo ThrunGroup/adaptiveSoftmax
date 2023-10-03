@@ -9,7 +9,7 @@ from datasets import load_dataset # huggingface datasets
 
 # number of workers in .map() call
 # good number to use is ~order number of cpu cores // 2
-num_proc = 8
+num_proc = 1
 
 # number of workers in load_dataset() call
 # best number might be different from num_proc above as it also depends on NW speed.
@@ -18,10 +18,10 @@ num_proc_load_dataset = num_proc
 
 if __name__ == '__main__':
     # takes 54GB in huggingface .cache dir, about 8M documents (8,013,769)
-    dataset = load_dataset("text", data_files={"train": "analogy_data.txt", "test": "analogy_data.txt"}, num_proc=num_proc_load_dataset)
+    dataset = load_dataset("text", data_files={"train": "analogy_data.txt"}, num_proc=num_proc_load_dataset)
 
     # owt by default only contains the 'train' split, so create a test split
-    split_dataset = dataset["train"].train_test_split(test_size=0.0005, seed=2357, shuffle=True)
+    split_dataset = dataset["train"].train_test_split(test_size=0.1, seed=2357, shuffle=True)
     split_dataset['val'] = split_dataset.pop('test') # rename the test split to val
 
     # this results in:
@@ -39,6 +39,7 @@ if __name__ == '__main__':
 
     # we now want to tokenize the dataset. first define the encoding function (gpt2 bpe)
     enc = tiktoken.get_encoding("gpt2")
+    print(enc)
     #import ipdb; ipdb.set_trace()
     def process(example):
         ids = enc.encode_ordinary(example['text']) # encode_ordinary ignores any special tokens
@@ -55,13 +56,16 @@ if __name__ == '__main__':
         num_proc=num_proc,
     )
 
+
+    #TODO: Is concatenating the right thing to do?
     # concatenate all the ids in each dataset into one large file we can use for training
     for split, dset in tokenized.items():
         arr_len = np.sum(dset['len'], dtype=np.uint64)
         filename = os.path.join(os.path.dirname(__file__), f'{split}.bin')
         dtype = np.uint16 # (can do since enc.max_token_value == 50256 is < 2**16)
         arr = np.memmap(filename, dtype=dtype, mode='w+', shape=(arr_len,))
-        total_batches = 1024
+        #TODO: What is the purpose of total_batches?
+        total_batches = 20
 
         idx = 0
         for batch_idx in tqdm(range(total_batches), desc=f'writing {filename}'):
