@@ -239,7 +239,7 @@ def compute_mip_batch_topk_ver2_warm_nb(atoms, query, sigma, delta, batch_size=1
 
 
         for i, atom_index in enumerate(solutions):
-            mu_exact[i] = atoms[atom_index, d_used[atom_index]:] @ query[d_used[atom_index]:]
+            mu_exact[i] += atoms[atom_index, d_used[atom_index]:] @ query[d_used[atom_index]:]
 
         d_used[solutions] = dim
 
