@@ -93,7 +93,8 @@ def main():
     answer_list = dataset['test']['answer']
 
     correct_predictions = 0
-    total_samples = 50  # Change this to len(dataset['test']) for the full dataset
+    #total_samples = len(dataset['test']) 
+    total_samples = 100
 
     for i in tqdm(range(total_samples), desc="Predicting", ncols=100):     
         if predict_missing_word(sentences_list[i], question_list[i], options_list[i], answer_list[i]):
