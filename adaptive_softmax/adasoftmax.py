@@ -162,6 +162,11 @@ class AdaSoftmax():
 
         T0 = int(min(math.ceil(17 * beta ** 2 * sigma ** 2 * math.log(6 * n / delta)), d))
 
+        if T0 == d:
+            mu = atoms @ query
+            mu -= torch.max(mu).item()
+            S_hat = torch.sum(torch.exp(mu))
+            return S_hat, mu, torch.full((n,), d)
         #print("T0:", T0)
 
         mu_hat = (d / T0) * (atoms[:, :T0] @ query[:T0])
@@ -193,12 +198,16 @@ class AdaSoftmax():
 
         n_samples = torch.ceil(torch.minimum((alpha + gamma) * T + T0, torch.full((n,), d).to(device))).int()
 
-        mu_hat_refined_aux = torch.empty(n).to(device)
+        mu_hat_refined = torch.empty(n).to(device)
 
         for i in range(n):
-            mu_hat_refined_aux[i] = atoms[i, T0:T0 + n_samples[i]] @ query[T0:T0 + n_samples[i]]
+            if n_samples[i] == d:
+                mu_hat_refined[i] = atoms[i] @ query
+            else:
+                mu_hat_refined_aux = atoms[i, T0:n_samples[i]] @ query[T0:n_samples[i]]
+                mu_hat_refined[i] = (mu_hat[i] * T0 + mu_hat_refined_aux * (n_samples[i] - T0)) / max(n_samples[i], 1)
 
-        mu_hat_refined = torch.div(mu_hat * T0 + mu_hat_refined_aux * d, torch.maximum(n_samples, torch.ones(n).to(device))) * beta
+        #mu_hat_refined = torch.div(mu_hat * T0 + mu_hat_refined_aux * d, torch.maximum(n_samples, torch.ones(n).to(device))) * beta
 
         mu_hat_refined = mu_hat_refined - torch.max(mu_hat_refined).item()
         #max_logit = torch.max(mu_hat_refined).item()
