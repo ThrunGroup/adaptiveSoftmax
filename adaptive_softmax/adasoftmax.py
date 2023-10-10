@@ -1,274 +1,301 @@
-import torch
-torch.manual_seed(0)
 import numpy as np
-import math
+from numba import njit
+import matplotlib.pyplot as plt
+import torch
+from hadamard_transform import randomized_hadamard_transform, hadamard_transform
+np.random.seed(777)
 
-from time import time
+@njit
+def approx_sigma_bound_nb(A, x, n_sigma_sample):
+    #NOTE: We're returning sigma as a sub-gaussian parameter(std of arm pull, not aij*xj)
+    n_arms = A.shape[0]
+    A_subset, x_subset = A[:, :n_sigma_sample], x[:n_sigma_sample]
 
+    elmul = np.multiply(A[:, :n_sigma_sample], x[:n_sigma_sample])
 
-#@jitclass
-class AdaSoftmax():
-    def __init__(self,):
-        pass
+    sigma = np.empty(n_arms)
+    for i in range(n_arms):
+        sigma[i] = np.std(elmul[i])
 
-    def approx_sigma_bound(self, A, x, n_sigma_sample):
-        #NOTE: We're returning sigma as a sub-gaussian parameter(std of arm pull, not aij*xj)
-        n_arms = A.shape[0]
+    #print(sigma)
 
-        elmul = np.multiply(A[:, :n_sigma_sample].detach().cpu().numpy(), x[:n_sigma_sample].detach().cpu().numpy())
+    return x.shape[0] * np.median(sigma)
 
-        sigma = np.empty(n_arms)
-        for i in range(n_arms):
-            sigma[i] = np.std(elmul[i])
+@njit
+def compute_mip_batch_topk_ver2_warm_nb(atoms, query, sigma, delta, batch_size=16, k=1, mu=None, budget_vec=None):
+    """
+    does same thing as previous, but instead of doing multiplication between single element of A and x,
+    it sequentially slices 'batch_size' elements from left to right, and performs inner product to
+    pull an arm.
+    """
 
-        #import ipdb; ipdb.set_trace()
+    dim = len(query)
+    n_atoms = len(atoms)
 
-        return x.shape[0] * np.max(sigma)
+    best_ind = np.empty(n_atoms, dtype=np.int64)
+    found_indices_num = 0
 
-    def compute_mip_batch_topk_ver2_warm(self, atoms, query, sigma, delta, batch_size=16, k=1, mu=None, budget_vec=None, device='cpu'):
-        """
-        does same thing as previous, but instead of doing multiplication between single element of A and x,
-        it sequentially slices 'batch_size' elements from left to right, and performs inner product to
-        pull an arm.
-        """
-        # TODO: divide-by-zero occurs on calculating confidence bound(C) when "large" number of sampling happened in normalization estimation.
-        # Need to pinpoint the cause.
+    # case where no best-arm identification is needed
+    if k == n_atoms:
+        return np.arange(n_atoms), 0, mu, budget_vec
 
-        dim = len(query)
-        n_atoms = len(atoms)
+    d_used = budget_vec
+    n_samples = 0  # instrumentation
 
-        best_ind = torch.empty(n_atoms).to(device)
-        found_indices_num = 0
+    mu = mu
+    max_index = np.argmax(mu)
+    max_mu = mu[max_index]
+    #d_used + 1(denominator) should be in the square root
+    C = np.divide(sigma * np.sqrt(2 * np.log(4 * n_atoms * d_used ** 2 / delta)),
+                  d_used + 1) if d_used is not None else np.zeros(n_atoms)
 
-        # case where no best-arm identification is needed
-        if k == n_atoms:
-            return torch.arange(n_atoms).to(device), 0, mu, budget_vec
+    solution_mask = np.ones(n_atoms, dtype="bool") & (
+                mu + C >= max_mu - C[max_index]) if mu is not None else np.ones(n_atoms, dtype="bool")
+    solutions = np.nonzero(solution_mask)[0]
+    # topk_indices = np.array([], dtype=np.int64)
 
-        d_used = budget_vec
-        n_samples = 0  # instrumentation
-
-        mu = mu
-        max_index = torch.argmax(mu)
+    if len(solutions) <= k:
+        # topk_indices = np.append(topk_indices, solutions)
+        best_ind[found_indices_num: found_indices_num + len(solutions)] = solutions
+        found_indices_num += len(solutions)
+        solution_mask = np.logical_not(solution_mask)
+        solutions = np.nonzero(solution_mask)[0]
+        max_index = solutions[np.argmax(mu[solution_mask])]
         max_mu = mu[max_index]
 
-        #TODO: C should not be zeros if no samples are taken?
-        C = torch.div(sigma * torch.sqrt(2 * torch.log(4 * n_atoms * d_used ** 2 / delta)),
-                    d_used + 1) if d_used is not None else torch.zeros(n_atoms).to(device)
-        solution_mask = torch.ones(n_atoms).bool().to(device) & (
-                    mu + C >= max_mu - C[max_index]) if mu is not None else torch.ones(n_atoms).bool().to(device)
-        solutions = torch.nonzero(solution_mask, as_tuple=True)[0].to(device)
+    #print(mu)
 
-        #import ipdb; ipdb.set_trace()
-        # topk_indices = np.array([], dtype=np.int64)
+    C = np.divide(sigma * np.sqrt(2 * np.log(4 * n_atoms * d_used ** 2 / delta)), d_used + 1)
 
-        #import ipdb; ipdb.set_trace()
+    print(d_used)
 
-        if len(solutions) <= k:
-            # topk_indices = np.append(topk_indices, solutions)
-            best_ind[found_indices_num: found_indices_num + len(solutions)] = solutions
-            found_indices_num += len(solutions)
-            solution_mask = torch.logical_not(solution_mask)
-            solutions = torch.nonzero(solution_mask, as_tuple=True)[0]
-            max_index = solutions[torch.argmax(mu[solution_mask])]
-            max_mu = mu[max_index]
+    solution_mask_before = solution_mask
 
-        C = torch.div(sigma * torch.sqrt(2 * torch.log(4 * n_atoms * d_used ** 2 / delta)), d_used + 1)
+    brute_force_threshold = np.ceil(atoms.shape[0] * 0.05)
+
+    while (len(solutions) > brute_force_threshold and found_indices_num < k and np.max(
+            d_used) < dim - batch_size):  # TODO: computing max everytime may degrade performance
+
+        #print("flag")
+
+        tmp = np.empty(np.sum(solution_mask))
+
+        for i, atom_index in enumerate(solutions):
+            tmp[i] = atoms[atom_index, d_used[atom_index]: d_used[atom_index] + batch_size] @ query[
+                                                                                              d_used[atom_index]:
+                                                                                              d_used[
+                                                                                                  atom_index] + batch_size]
+
+        mu[solutions] = np.divide(np.multiply(d_used[solution_mask], mu[solutions]) + tmp * dim,
+                                  d_used[solution_mask] + batch_size)
+        n_samples += len(solutions) * batch_size
+
+        C = np.divide(sigma * np.sqrt(2 * np.log(4 * n_atoms * d_used ** 2 / delta)),
+                      d_used + 1)  # TODO: update confidence bound. This is when we're sampling one A_iJ * x_J at each round. Can and should be tighter than this -> divide with + batch size somehow?
+
+        max_index = solutions[np.argmax(mu[solution_mask])]
+        max_mu = mu[max_index]
+
+        d_used[solutions] += batch_size
 
         solution_mask_before = solution_mask
+        solution_mask = solution_mask & (mu + C >= max_mu - C[max_index])
+        solutions = np.nonzero(solution_mask)[0]
 
-        brute_force_threshold = math.ceil(atoms.shape[0] * 0.05)
-
-        while (len(solutions) > brute_force_threshold and found_indices_num < k and torch.max(
-                d_used) < dim - batch_size):  # TODO: computing max everytime may degrade performance
-
-            #TODO: Need to verify this
-
-            tmp = torch.empty(torch.sum(solution_mask))
-
-            for i, atom_index in enumerate(solutions):
-                tmp[i] = atoms[atom_index, d_used[atom_index]: d_used[atom_index] + batch_size] @ query[
-                                                                                                d_used[atom_index]:
-                                                                                                d_used[
-                                                                                                    atom_index] + batch_size]
-
-            mu[solutions] = torch.div(torch.mul(d_used[solution_mask], mu[solutions]) + tmp * dim,
-                                    d_used[solution_mask] + batch_size)
-            n_samples += len(solutions) * batch_size
-
-            C = torch.div(sigma * torch.sqrt(2 * torch.log(4 * n_atoms * d_used ** 2 / delta)),
-                        d_used + 1)  # TODO: update confidence bound. This is when we're sampling one A_iJ * x_J at each round. Can and should be tighter than this -> divide with + batch size somehow?
-
-            max_index = solutions[torch.argmax(mu[solution_mask])]
+        if len(solutions) <= k - found_indices_num:
+            best_ind[found_indices_num: found_indices_num + len(solutions)] = solutions
+            found_indices_num += len(solutions)
+            solution_mask = np.logical_xor(solution_mask_before,
+                                            solution_mask)  # TODO: Does xor work even in the worst case scenario? or should we revive all candidates?
+            solutions = np.nonzero(solution_mask)[0]
+            max_index = solutions[np.argmax(mu[solution_mask])]
             max_mu = mu[max_index]
 
-            d_used[solutions] += batch_size
+    # need to check if this is correct?
+    if found_indices_num < k:
+        mu_exact = np.multiply(d_used, mu)
 
-            solution_mask_before = solution_mask
-            solution_mask = solution_mask & (mu + C >= max_mu - C[max_index])
-            solutions = torch.nonzero(solution_mask, as_tuple=True)[0]
 
-            if len(solutions) <= k - found_indices_num:
-                best_ind[found_indices_num: found_indices_num + len(solutions)] = solutions
-                found_indices_num += len(solutions)
-                solution_mask = torch.logical_xor(solution_mask_before,
-                                                solution_mask)  # TODO: Does xor work even in the worst case scenario? or should we revive all candidates?
-                solutions = torch.nonzero(solution_mask, as_tuple=True)[0]
-                max_index = solutions[torch.argmax(mu[solution_mask])]
-                max_mu = mu[max_index]
+        for i, atom_index in enumerate(solutions):
+            mu_exact[i] += atoms[atom_index, d_used[atom_index]:] @ query[d_used[atom_index]:]
 
-        # need to check if this is correct?
-        if found_indices_num < k:
+        d_used[solutions] = dim
 
-            #mu_exact = torch.mul(d_used[solution_mask], mu[solution_mask])
-            mu_exact = torch.mul(d_used, mu)
+        mu = np.divide(mu_exact, d_used)
 
-            #tmp = torch.empty(torch.sum(solution_mask))
-            #import ipdb; ipdb.set_trace()
+        # TODO: is there a way to avoid copy?
+        mu_exact_search = mu_exact.copy()
 
-            for i, atom_index in enumerate(solutions):
-                mu_exact += atoms[atom_index, d_used[atom_index]:] @ query[d_used[atom_index]:]
+        while found_indices_num < k:
+            best_index = np.argmax(mu_exact_search)
+            best_ind[found_indices_num] = best_index
+            found_indices_num += 1
+            mu_exact_search[best_index] = -np.inf
 
-            d_used[solutions] = dim
+    return best_ind, n_samples, mu, d_used
 
-            mu = torch.div(mu_exact, d_used)
+@njit
+def estimate_softmax_normalization_warm_nb(atoms, query, beta, epsilon, delta, sigma, bruteforce=False):
+    #TODO: when T0=d, return bruteforce
+    true_mu = atoms @ query
 
-            #mu[solutions] = mu_exact
+    n = atoms.shape[0]
+    d = query.shape[0]
+    used_samples = 0
 
-            #import ipdb; ipdb.set_trace()
+    #TODO: do this on other int functions
+    T0 = int(np.ceil(min(np.ceil(17 * beta ** 2 * sigma ** 2 * np.log(6 * n / delta)), d)))
+    print("T0:", T0)
 
-            # TODO: is there a way to avoid copy?
-            mu_exact_search = mu_exact.clone().detach()
+    if T0 == d:
+        mu = (atoms @ query).astype(np.float64)
+        #TODO: add beta to errors
+        first_order_error = np.sum(np.multiply(np.exp(mu), (true_mu - mu)))
+        second_order_error = np.sum(np.multiply(np.exp(mu), (true_mu - mu)**2))
+        mu -= np.max(mu)
+        S_hat = np.sum(np.exp(mu))
+        print(np.full((n,), d).dtype)
+        print("first order error:", first_order_error)
+        print("second order error:", second_order_error)
+        return S_hat, mu, np.full((n,), d).astype(np.int64)
 
-            while found_indices_num < k:
-                best_index = torch.argmax(mu_exact_search)
-                best_ind[found_indices_num] = best_index
-                found_indices_num += 1
-                mu_exact_search[best_index] = -float('inf')
+    mu_hat = (d / T0) * (atoms[:, :T0] @ query[:T0])
+    C = (2 * sigma ** 2 * np.log(6 * n / delta) / T0) ** 0.5
 
-            n_samples += torch.sum(dim - d_used[solution_mask])
+    C_true = (2 * sigma ** 2 * np.log(6 * n / delta) / d) ** 0.5
 
-            #import ipdb; ipdb.set_trace()
+    true_alpha = np.exp(true_mu - C_true) / np.sum(np.exp(true_mu - C_true))
+    true_gamma = np.exp((true_mu - C_true) / 2) / np.sum(np.exp((true_mu - C_true) / 2))
 
-        return best_ind.int(), mu, d_used
+    #Maybe this is better?
+    #mu_hat -= np.min(mu_hat)
 
-    def estimate_softmax_normalization_warm(self, atoms, query, beta, epsilon, delta, sigma, bruteforce=False, device='cpu'):
-        #TODO: when T0=d, return bruteforce
+    mu_hat_aux = (mu_hat - C) * beta
+    #TODO: Add sophisticated numericall stability measure
+    #mu_hat_aux -= np.max(mu_hat_aux)
+    mu_hat_exp_alpha = np.exp(mu_hat_aux)
+    alpha = mu_hat_exp_alpha / np.sum(mu_hat_exp_alpha)
 
-        n = atoms.shape[0]
-        d = query.shape[0]
-        used_samples = 0
+    mu_hat_exp_gamma = np.exp(mu_hat_aux / 2)
+    gamma = mu_hat_exp_gamma / np.sum(mu_hat_exp_gamma)
 
-        #import ipdb; ipdb.set_trace()
 
-        T0 = int(min(math.ceil(17 * beta ** 2 * sigma ** 2 * math.log(6 * n / delta)), d))
+    #seperate this from constructing alpha and gamma(maximum element subtraction)
+    #import ipdb; ipdb.set_trace()
+    Term1 = 17 * np.log((6 * n) / delta)
+    Term2_constant = (16 * (2 ** 0.5) * np.log((6 * n) / delta) * np.sum(mu_hat_exp_gamma)**2) / (epsilon * np.sum(mu_hat_exp_alpha))
+    Term3_constant = (16 * np.log(12 / delta)) / (epsilon ** 2)
 
-        #print("T0:", T0)
+    print("ratio:", np.sum(mu_hat_exp_gamma)**2 / (np.sum(mu_hat_exp_alpha)))
 
-        mu_hat = (d / T0) * (atoms[:, :T0] @ query[:T0])
-        C = (2 * sigma ** 2 * math.log(6 * n / delta) / T0) ** 0.5
+    Term2 = gamma * Term2_constant
+    Term3 = alpha * Term3_constant
 
-        n_samples = torch.zeros(n) + T0
+    print("T1:", Term1)
+    print("T2:", Term2)
+    print("T3:", Term3)
+    print("Sums:", n*Term1, np.sum(Term2), np.sum(Term3))
 
-        #Maybe this is better?
-        #mu_hat -= np.min(mu_hat)
+    #probably n_samples = max(Term1, Term2, Term3)
+    n_samples = (Term2 + Term3) + Term1
+    n_samples.astype(np.int64)
+    print("prior scaling:", n_samples)
+    #TODO: add beta
+    print("estimate n_i:", sigma**2 * n_samples)
+    print("T:", np.sum(sigma**2 * n_samples))
+    n_samples = np.ceil(np.minimum(beta**2 * sigma**2 * n_samples, d)).astype(np.int64) #TODO: Note that we're ignoring beta here, need to add support later. / Redundant typing?
 
-        mu_hat_aux = (mu_hat - C) * beta
-        mu_hat_aux -= torch.max(mu_hat_aux)
-        #mu_hat_aux = (mu_hat - C) * beta
-        mu_hat_exp_alpha = torch.exp(mu_hat_aux)
-        alpha = mu_hat_exp_alpha / torch.sum(mu_hat_exp_alpha)
+    #n_samples = np.ceil(np.minimum((alpha + gamma) * T + T0, d)).astype(np.int64)
 
-        mu_hat_exp_gamma = torch.exp(mu_hat_aux / 2)
-        gamma = mu_hat_exp_gamma / torch.sum(mu_hat_exp_gamma)
+    mu_hat_refined = np.empty(n)
 
-        #import ipdb; ipdb.set_trace()
-        T1 = 17 * math.log((6 * n) / delta) * n
-        T2 = (32 * math.log((6 * n) / delta) * n * torch.sum(mu_hat_exp_gamma)**2) / (epsilon * torch.sum(mu_hat_exp_alpha))
-        T3 = (16 * math.log(12 / delta)) / (epsilon ** 2)
+    #TODO: how to incorporate beta?
+    for i in range(n):
+        if n_samples[i] == d:
+            mu_hat_refined[i] = atoms[i] @ query
+        else:
+            mu_hat_refined_aux = d * atoms[i, T0:n_samples[i]] @ query[T0:n_samples[i]]
+            mu_hat_refined[i] = (mu_hat[i] * T0 + mu_hat_refined_aux) / max(n_samples[i], 1)
 
-        T = beta**2 * sigma**2 * (T1 + T2 + T3)
+    #normalize only on arms that are NOT bruteforces
 
-        #Experimental changes
-        #normalized_sampling_distribution = (alpha + gamma) / np.sum(alpha + gamma)
+    first_order_error = np.sum(np.multiply(np.exp(mu_hat_refined), (true_mu - mu_hat_refined)))
+    second_order_error = np.sum(np.multiply(np.exp(mu_hat_refined), (true_mu - mu_hat_refined)**2))
 
-        n_samples = torch.ceil(torch.minimum((alpha + gamma) * T + T0, torch.full((n,), d).to(device))).int()
+    print("first order error:", first_order_error / np.sum(np.exp(beta * true_mu)))
+    print("second order error:", second_order_error / np.sum(np.exp(beta * true_mu)))
 
-        mu_hat_refined_aux = torch.empty(n).to(device)
+    print(mu_hat_refined - true_mu)
 
-        for i in range(n):
-            mu_hat_refined_aux[i] = atoms[i, T0:T0 + n_samples[i]] @ query[T0:T0 + n_samples[i]]
+    #TODO: define seperate vector for mu - max(mu) / mu(untouched)
+    mu_hat_refined -= np.max(mu_hat_refined)
 
-        mu_hat_refined = torch.div(mu_hat * T0 + mu_hat_refined_aux * d, torch.maximum(n_samples, torch.ones(n).to(device))) * beta
+    mu_hat_refined_exp = np.exp(mu_hat_refined)
+    S_hat = np.sum(mu_hat_refined_exp)
 
-        mu_hat_refined = mu_hat_refined - torch.max(mu_hat_refined).item()
-        #max_logit = torch.max(mu_hat_refined).item()
-        #max_logit = 0
-        #import ipdb; ipdb.set_trace()
+    return S_hat, mu_hat_refined, n_samples
 
-        mu_hat_refined_exp = torch.exp(mu_hat_refined)
-        S_hat = torch.sum(mu_hat_refined_exp)
+    #Potential hazard: max value of mu_hat for alpha construction and max value of mu hat for S_hat estimation is different, which may result in incorrect sampling or other problems?
 
-        return S_hat, mu_hat_refined, n_samples.long()
+# adaSoftmax with warm start
+@njit
+def ada_softmax_nb(A, x, beta, epsilon, delta, n_sigma_sample, k):
 
-        #Potential hazard: max value of mu_hat for alpha construction and max value of mu hat for S_hat estimation is different, which may result in incorrect sampling or other problems?
+    #TODO: repleace this with empirical bernstein bound, extend "warm start" to the sigma approximation layer
+    sigma = approx_sigma_bound_nb(A, x, n_sigma_sample)
 
-    # adaSoftmax with warm start
-    def ada_softmax(self, A, x, beta, epsilon, delta, n_sigma_sample, k):
+    print("sigma:", sigma)
+    #sigma = 6.0
 
-        device = A.device
+    #TODO: do NOT compute the S_hat here, just compute estimate on mu
+    S_hat, mu_hat, budget_vec = estimate_softmax_normalization_warm_nb(A, x, beta, epsilon / 2, delta / 3, sigma)
 
-        #TODO: repleace this with empirical bernstein bound, extend "warm start" to the sigma approximation layer
-        sigma = self.approx_sigma_bound(A, x, n_sigma_sample)
+    print(budget_vec)
 
-        #print(sigma)
-        print(sigma)
+    mu = A @ x
+    mu -= np.max(mu)
+    S = np.sum(np.exp(mu))
+    print("S error:", S_hat - S)
 
-        S_hat, mu_hat, budget_vec = self.estimate_softmax_normalization_warm(A, x, beta, epsilon / 2, delta / 3, sigma, device=device)
+    #print("S estimate:", S_hat)
 
-        #print(torch.max(mu_hat), S_hat, torch.sum(budget_vec) / 50257)
+    print("denominator budget:", np.sum(budget_vec))
 
-        #import ipdb; ipdb.set_trace()
+    #print(mu_hat)
 
-        #print("S estimate:", S_hat)
+    best_index_hat, budget_mip, mu_hat, budget_vec = compute_mip_batch_topk_ver2_warm_nb(A, x, sigma, delta / 3,
+                                                                                      batch_size=16, k=k, mu=mu_hat,
+                                                                                      budget_vec=budget_vec)
 
-        #print("denominator budget:", torch.sum(budget_vec))
-        print("estimate1:", torch.argmax(mu_hat))
-        print(torch.sum(budget_vec).item() / 50257)
+    print("denominator + best arm identification:", np.sum(budget_vec))
+    #print(mu_hat)
 
-        best_index_hat, mu_hat, budget_vec = self.compute_mip_batch_topk_ver2_warm(A, x, sigma, delta / 3,
-                                                                                        batch_size=16, k=k, mu=mu_hat,
-                                                                                        budget_vec=budget_vec,
-                                                                                        device=device)
+    best_index_hat = best_index_hat[:k]
 
-        #print("denominator + best arm identification:", torch.sum(budget_vec))
-        print("estimate2:", torch.argmax(mu_hat), best_index_hat)
+    n_arm_pull = int(min(
+        np.ceil((288 * sigma ** 2 * beta ** 2 * np.log(6 / delta)) / (epsilon ** 2)),
+        x.shape[0]
+    ))
 
-        best_index_hat = best_index_hat[:k]
+    #mu_additional = np.empty(k)
 
-        n_arm_pull = int(min(
-            math.ceil((288 * sigma ** 2 * beta ** 2 * math.log(6 / delta)) / (epsilon ** 2)),
-            x.shape[0]
-        ))
+    #TODO: add an if statement to not sample if no additional budget is needed
+    for arm_index in best_index_hat:
+        mu_additional = x.shape[0] * A[arm_index, budget_vec[arm_index]: n_arm_pull] @ x[budget_vec[arm_index]: n_arm_pull]
+        mu_hat[arm_index] = (mu_hat[arm_index] * budget_vec[arm_index] + mu_additional) / max(budget_vec[arm_index], n_arm_pull, 1)
 
-        #mu_additional = np.empty(k)
+    #mu_hat[best_index_hat] += np.divide(x.shape[0] * mu_additional, np.maximum(1, n_arm_pull - budget_vec[best_index_hat]))
 
-        for i in range(best_index_hat.shape[0]):
-            #import ipdb; ipdb.set_trace()
-            #arm_index = best_index_hat[i]
-            arm_index = best_index_hat[i] if best_index_hat.shape[0] > 1 else best_index_hat.item()
-            mu_additional = A[arm_index, budget_vec[arm_index]: n_arm_pull] @ x[budget_vec[arm_index]: n_arm_pull]
-            mu_hat[arm_index] = (mu_hat[arm_index] * budget_vec[arm_index] + x.shape[0] * mu_additional) / max(budget_vec[arm_index], n_arm_pull, 1)
+    budget_vec[best_index_hat] = np.maximum(budget_vec[best_index_hat], n_arm_pull)
 
-        #mu_hat[best_index_hat] += np.divide(x.shape[0] * mu_additional, np.maximum(1, n_arm_pull - budget_vec[best_index_hat]))
+    #print("total_budget:", np.sum(budget_vec))
 
-        #import ipdb; ipdb.set_trace()
-        budget_vec[best_index_hat] = torch.maximum(budget_vec[best_index_hat], torch.full((best_index_hat.shape[0],), n_arm_pull).int().to(device))
+    # y_best_hat = np.exp(beta * (mu_best_hat), dtype=np.float64)
+    #TODO: use computational trick here
+    y_best_hat = np.exp(beta * (mu_hat))
+    budget = np.sum(budget_vec)
+    z = y_best_hat / S_hat
 
-        #print("total_budget:", torch.sum(budget_vec))
+    #z = z / np.sum(z)
 
-        # y_best_hat = np.exp(beta * (mu_best_hat), dtype=np.float64)
-        y_best_hat = torch.exp(beta * (mu_hat))
-        budget = torch.sum(budget_vec)
-        z = y_best_hat / S_hat
-
-        return best_index_hat, z, budget
+    return best_index_hat, z, budget
