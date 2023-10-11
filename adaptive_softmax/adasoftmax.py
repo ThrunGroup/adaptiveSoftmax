@@ -1,10 +1,14 @@
 import numpy as np
 from numba import njit
 from typing import Tuple, List, Any
-from constants import exact_computation_epsilon
+from constants import (
+    BATCH_SIZE,
+    TOP_K,
+    BETA,
+)
 
 @njit
-def approx_sigma_bound_nb(
+def approx_sigma(
     A: np.ndarray,
     x: np.ndarray,
     num_samples: int
@@ -21,45 +25,44 @@ def approx_sigma_bound_nb(
     """
     elmul = A[:, :num_samples] * x[:num_samples]
     sigma = np.std(elmul, axis=1)
-    # TODO(@ryank, lukehan): Should x.shape[0] be removed here? => Need to check with Tavor
+    # TODO(@lukehan): Should x.shape[0] be removed here? => Need to check with Tavor
     return x.shape[0] * np.median(sigma)
 
 @njit
-def estimate_softmax_normalization(
+def estimate_mu_hat(
     atoms: np.ndarray,
     query: np.ndarray,
-    beta: float,
     epsilon: float,
     delta: float,
     sigma: float,
+    beta: float = BETA,
     verbose: bool = False,
-) -> Tuple[float, np.ndarray, np.ndarray]:
+) -> Tuple[np.ndarray, np.ndarray]:
     """
     This is Algorithm 1 from the paper (adaApprox).
-    Approximates the normalization constant of softmax function (i.e. denoted as S in the original paper) within
-    epsilon multiplicative error with probability 1 - delta.
+    For numerical stability, we approximate the normalization constant "S" after finding the numerator term of
+    the softmax. This function instead returns the mu_hat that will be used to find the normalization constant.
 
     :param atoms: Matrix A in the original paper
     :param query: Vector x in the original paper
-    :param beta: beta in the original paper
     :param epsilon: bound on the multiplicative error of estimation for S
     :param delta: probability of failure of estimation for S
     :param sigma: sub-gaussianity parameter for the arm pull across all arms
+    :param beta: beta in the original paper
 
-    :returns: the approximation for S
+    :returns: the approximation for mu_hat
     """
     n = atoms.shape[0]
     d = query.shape[0]
-    T0 = int(np.ceil(
+    T0 = np.ceil(
             min(
                 # theoretical complexity
                 17 * beta ** 2 * sigma ** 2 * np.log(6 * n / delta),
                 d
             )
-    ))
+    ).item()
 
     # Do exact computation if theoretical complexity isn't less than dimension d
-
     if T0 >= d:
         mu = (atoms @ query).astype(np.float64)
 
@@ -67,53 +70,50 @@ def estimate_softmax_normalization(
             true_mu = atoms @ query
             first_order_error = np.sum(np.exp(beta * mu) * beta * (true_mu - mu))
             second_order_error = np.sum(np.exp(beta * mu) * beta**2 * (true_mu - mu)**2)
-            print(np.full((n,), d).dtype)
+            print(np.ones(n) * d)
             print("first order error:", first_order_error)
             print("second order error:", second_order_error)
 
         return mu, d * np.ones(n).astype(np.int64)
 
-    mu_hat = (d / T0) * (atoms[:, :T0] @ query[:T0])
-    C = (2 * sigma ** 2 * np.log(6 * n / delta) / T0) ** 0.5
+    # compute variables for lines 2-5 of Algorithm 1
+    mu_hat = (atoms[:, :T0] @ query[:T0]) * (d / T0)  # scale to get unbiased estimator
+    c_interval = np.sqrt(
+        2 * sigma ** 2 * np.log(6 * n / delta) / T0
+    )
+    exp = beta * (mu_hat - c_interval)
+    normalized_exp = exp - np.max(exp)  # logsum trick for numerical stability
+    alpha_numer = np.exp(normalized_exp)
+    gamma_numer = np.exp(normalized_exp / 2)  # TODO (@lukehan): this is different from paper?
 
-    # Exponents for alpha and gamma
-    mu_hat_aux = (mu_hat - C) * beta
+    # Determine the number of total samples to use for each arm. 
+    # This means we're taking an extra n_samples - T0 samples to update mu
+    log_term = np.log((6 * n) / delta)
+    term1 = 17 * log_term
+    term2 = 16 * (2 ** 0.5) * log_term * np.sum(gamma_numer) * gamma_numer / (epsilon * np.sum(alpha_numer))
+    term3 =  (16 * np.log(12 / delta)) * alpha_numer / ((epsilon ** 2) * np.sum(alpha_numer))
+    n_samples = np.maximum(term1, term2, term3).astype(np.int64)  
+    n_samples = np.ceil(
+        np.minimum(beta**2 * sigma**2 * n_samples, d)
+    ).astype(np.int64)
 
-    # Using logsumexp trick for numerical stability
-    mu_hat_aux -= np.max(mu_hat_aux)
-    mu_hat_exp_alpha = np.exp(mu_hat_aux)
-    alpha = mu_hat_exp_alpha / np.sum(mu_hat_exp_alpha)
-    mu_hat_exp_gamma = np.exp(mu_hat_aux / 2)
-    gamma = mu_hat_exp_gamma / np.sum(mu_hat_exp_gamma)
-
-    ni_term1 = 17 * np.log((6 * n) / delta)
-    # TODO(@ryank, lukehan): Break onto several lines
-    ni_term2 = gamma * (16 * (2 ** 0.5) * np.log((6 * n) / delta) * np.sum(mu_hat_exp_gamma)**2) / (epsilon * np.sum(mu_hat_exp_alpha))
-    ni_term3 = alpha * (16 * np.log(12 / delta)) / (epsilon ** 2)
-
-    n_samples = np.maximum(ni_term1, ni_term2, ni_term3)
-    n_samples.astype(np.int64)
-
-    # All terms need to be multiplied by beta^2 * sigma^2
-    n_samples = np.ceil(np.minimum(beta**2 * sigma**2 * n_samples, d)).astype(np.int64)
-
+    # one-time sampling for each arm with the budget computed above
     updated_mu_hat = np.empty(n)
     for i in range(n):
-        if n_samples[i] == d:
+        if n_samples[i] >= d:
             updated_mu_hat[i] = atoms[i] @ query
         else:
-            # TODO(@ryank, lukehan): Should this be T0:T0 + n_samples[i]? => Discuss with Tavor
-            mu_hat_refined_aux = d * atoms[i, T0:n_samples[i]] @ query[T0:n_samples[i]]
-            updated_mu_hat[i] = (mu_hat[i] * T0 + mu_hat_refined_aux) / max(n_samples[i], 1)
+            mu_approx = atoms[i, T0:n_samples[i]] @ query[T0:n_samples[i]] * d
+            updated_mu_hat[i] = (mu_hat[i] * T0 + mu_approx) / max(n_samples[i], 1)
 
     if verbose:
         true_mu = atoms @ query
-        print("ratio:", np.sum(mu_hat_exp_gamma) ** 2 / (np.sum(mu_hat_exp_alpha)))
+        print("ratio:", np.sum(gamma_numer) ** 2 / (np.sum(alpha_numer)))
 
-        print("T1:", ni_term1)
-        print("T2:", ni_term2)
-        print("T3:", ni_term3)
-        print("Sums:", n * ni_term1, np.sum(ni_term2), np.sum(ni_term3))
+        print("T1:", term1)
+        print("T2:", term2)
+        print("T3:", term3)
+        print("Sums:", n * term1, np.sum(term2), np.sum(term3))
 
         print("prior scaling:", n_samples)
         print("estimate n_i:", beta**2 * sigma ** 2 * n_samples)
@@ -125,39 +125,32 @@ def estimate_softmax_normalization(
         print("second order error:", second_order_error / np.sum(np.exp(beta * true_mu)))
         print(updated_mu_hat - true_mu)
 
-    # Potential hazard: max value of mu_hat for alpha construction
-    # and max value of mu hat for S_hat estimation is different, which may
-    # result in incorrect sampling or other problems?
     return updated_mu_hat, n_samples
 
 @njit
 def find_topk_arms(
-    atoms,
-    query,
-    sigma,
-    delta,
-    mu_approx,
-    d_used,
-    batch_size=16,  # TODO(@ryank): Move to constants.py and set batch_size to bigger
-    k=1,
-):
+    atoms: np.ndarray,
+    query: np.ndarray,
+    sigma: float,
+    delta: float,
+    mu_approx: np.ndarray,
+    d_used: np.ndarray,
+    batch_size: int = BATCH_SIZE,
+    k: int = TOP_K,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Function to identify the top k arms where each arm is ____
+    Function to identify the indices of the top k softmax values
 
-    Parameters:
-        atoms (ndarray[(n, d), np.float]): the matrix A in original paper
-        query (ndarray[(d,), np.float]): the vector x in original paper
-        sigma (float): median of the sub-gaussianity parameter for an arm pull across all arms
-        delta (float): probability of being incorrect
-        mu_approx (ndarray[(n,), np.float]): mu obtained from the normalization approximation
-        d_used (ndarray[(n,), np.float]): number of arm pulls per arm
-        batch_size (int): the batch size for each round of UCB&successive elimination
-        k (int): the number of arms we want to identify
+    :param atoms: the matrix A in original paper
+    :param query: the vector x in original paper
+    :param sigma: sub-gaussianity parameter for an arm pull across all arms
+    :param delta: probability of being incorrect
+    :param mu_approx: mu obtained from the one-time sampling
+    :param d_used: number of arm pulls per arm used in the one-time sampling
+    :param batch_size: the batch size for each round of UCB & successive elimination
+    :param k: the number of indices we want to identify
 
-    Returns:
-        ndarray[(k,), np.int]: Indices with top-k values in mu
-        ndarray[(n,), np.float]: Estimate on mu
-        ndarray[(n,), np.int]: Budgets spent on each arm
+    :return: top_k indices, mu, number of samples used on each arm
     """
     dim = len(query)
     n_atoms = len(atoms)
@@ -170,38 +163,30 @@ def find_topk_arms(
     best_ind = np.empty(n_atoms, dtype=np.int64)
     mask = np.ones(n_atoms, dtype='bool')   # initially all candidates are valid
 
+    # Run successive elimination to estimate mu_hat by sampling WITHOUT replacement
     terminated = False
     while not terminated:
-        # Run single iteration of successive elimination with statistics shared from normalization step.
-        # Namely, the approximation of mu (i.e. mu_approx) and the number of arm pulls made previously (i.e. d_used)
         numer = 2 * np.log(4 * n_atoms * d_used ** 2 / delta)
-        denom = d_used + 1
-        c_interval = sigma * np.sqrt(numer / denom)
+        c_interval = sigma * np.sqrt(numer / (d_used + 1))
 
         # update the mask to get the surviving arm indices
         max_index = np.argmax(mu_approx)
         lower_bound = mu_approx[max_index] - c_interval[max_index]
-
         prev_mask = mask.copy()
 
-        is_surviving_candidate = (mu_approx + c_interval) >= lower_bound
-        mask = mask & is_surviving_candidate
-        # leaving is as it is because we're not interested in nonzero values, but rather nonzero indices of mask
-        surviving_arms = np.nonzero(mask)[0]
+        surviving = (mu_approx + c_interval) >= lower_bound
+        mask = mask & surviving
+        surviving_arms = np.nonzero(mask)[0]  # get nonzero indices of mask (this is NOT deprecated)
 
         # revive previously eliminated arms if we have less than k surviving arms
         if len(surviving_arms) <= k - num_found:
             best_ind[:len(surviving_arms)] = surviving_arms
             num_found += len(surviving_arms)
-
-            # Performing xor to revive candidates that's eliminated at current round
-            mask = np.logical_xor(prev_mask, mask)  # so we don't look at the arms we already found
+            mask = np.logical_xor(prev_mask, mask)  # revive candidates eliminated at current round
             surviving_arms = np.nonzero(mask)[0]
 
-        # TODO(@ryank): Comment on why sub-optimality measure is not needed
-
         compute_exactly = np.max(d_used) > (dim - batch_size)
-        if compute_exactly or num_found > k:
+        if compute_exactly or num_found >= k:
             # NOTE: we're not using the terminated variable
             terminated = True
             break
@@ -217,15 +202,17 @@ def find_topk_arms(
         # we need to scale the mu approximation accordingly
         numer = mu_approx[surviving_arms] * d_used[mask] + sampled_mu_approx * dim
         mu_approx[surviving_arms] = numer / (d_used[mask] + batch_size)
+        d_used[mask] += batch_size
 
     # Brute force computation for the remaining candidates
     if compute_exactly:
         curr_mu = d_used * mu_approx
         for i, atom_index in enumerate(surviving_arms):
-            curr_mu[i] += atoms[atom_index, d_used[atom_index]:] @ query[d_used[atom_index]:]
+            used = d_used[atom_index]
+            curr_mu[i] += atoms[atom_index, used:] @ query[used:] * dim
 
         d_used[surviving_arms] = dim
-        mu = curr_mu / d_used
+        mu_approx = curr_mu / d_used  # to maintain consistent naming
         mu_exact_search = curr_mu.copy()
 
         while num_found < k:
@@ -234,82 +221,75 @@ def find_topk_arms(
             num_found += 1
             mu_exact_search[best_index] = -np.inf
 
-    return best_ind[:k], mu, d_used
+    return best_ind[:k], mu_approx, d_used
 
 
 # adaSoftmax with warm start
 @njit
 def ada_softmax(
-    A,
-    x,
-    beta,
-    epsilon,
-    delta,
-    n_sigma_sample,
-    k,
-    verbose=False,
-):
+    A: np.ndarray,
+    x: np.ndarray,
+    epsilon: float,
+    delta: float,
+    samples_for_sigma: int,
+    beta: float = BETA,
+    k: int = TOP_K,
+    verbose: bool = False,
+) -> Tuple[np.ndarray, np.ndarray, int]:
     """
     This is Algorithm 2 from the paper.
     This calls approx_sigma_bound to get an approximation on sigma, the sub-gaussian parameter in the original paper.
-    S_hat(estimation on S) is obtained by calling estimate_softmax_normalization.
-    Top-k indices are obtained by calling find_topk.
-    If additional samples are needed for correct numerator estimation, they're sampled in this function.
-    Returns top-k indices, estimation of softmax value across all indices, and total number of sampled used.
+    The estimation on S is obtained here. Additional samples may be used for the precise estimation for the best k arms.
 
-    Parameters:
-        A (ndarray[(n, d), np.float]): Matrix A in the original paper
-        x (ndarray[(d,), np.float]): Vector x in the original paper
-        beta (float): Beta in the original paper
-        epsilon (float): Multiplicative error bound for softmax value estimation
-        delta (float): Probability of failure for softmax value estimation
-        n_sigma_sample (int): Number of samples to allocate on sigma approximation
-        k (int): Number of top-k softmax values we want to approximate correctly(parameter for find_topk)
-        verbose (bool): Indicator for verbosity
+    :param A: Matrix A in the original paper
+    :param x: Vector x in the original paper
+    :param epsilon: Multiplicative error bound for softmax value estimation
+    :param delta: Probability of failure for softmax value estimation
+    :param samples_for_sigma: Number of samples to allocate on sigma approximation
+    :param beta: Beta in the original paper
+    :param k: Number of top-k softmax values we want to approximate correctly(parameter for find_topk)
+    :param verbose: Indicator for verbosity
 
-    Returns:
-        ndarray[(k,), np.int]: Top-k indices for softmax
-        ndarray[(n,), np.float]: Estimation for softmax values
-        int: Total budget spent for softmax estimation
+    :return: top-k indices, estimation of softmax value across all indices, and total number of sampled used.
     """
-    sigma = approx_sigma_bound_nb(A, x, n_sigma_sample)
+    sigma = approx_sigma(A, x, samples_for_sigma)
     if verbose:
         print("sigma:", sigma)
 
-    mu_hat, budget_vec = estimate_softmax_normalization(A, x, beta, epsilon / 2, delta / 3, sigma)
-    best_index_hat, mu_hat, budget_vec = find_topk_arms(
-        A,
-        x,
-        sigma,
-        delta / 3,
-        batch_size=16,
+    mu_hat, d_used = estimate_mu_hat(A, x, beta, epsilon / 2, delta / 3, sigma)
+    best_indices, updated_mu_hat, d_used_updated = find_topk_arms(
+        atoms=A,
+        query=x,
+        sigma=sigma,
+        delta=delta / 3,
+        mu_approx=mu_hat,
+        d_used=d_used,
+        batch_size=BATCH_SIZE,
         k=k,
-        mu=mu_hat,
-        budget_vec=budget_vec,
     )
 
+    # Total samples to use for better approximation of the mu of the top k arms.
+    # This means we sample n_arm_pull - used_samples more times.
     n_arm_pull = int(min(
         np.ceil((288 * sigma ** 2 * beta ** 2 * np.log(6 / delta)) / (epsilon ** 2)),
         x.shape[0]
     ))
-
-    for arm_index in best_index_hat:
-        used_sample = budget_vec[arm_index]
+    for arm_index in best_indices:
+        used_sample = d_used_updated[arm_index]
         if used_sample < n_arm_pull:
             mu_additional = x.shape[0] * A[arm_index, used_sample: n_arm_pull] @ x[used_sample: n_arm_pull]
-            mu_hat[arm_index] = (mu_hat[arm_index] * used_sample + mu_additional) / max(used_sample, n_arm_pull, 1)
+            updated_mu_hat[arm_index] = (updated_mu_hat[arm_index] * used_sample + mu_additional) / n_arm_pull
 
-    budget_vec[best_index_hat] = np.maximum(budget_vec[best_index_hat], n_arm_pull)
+    d_used_updated[best_indices] = np.maximum(d_used_updated[best_indices], n_arm_pull)
 
-    #Using logsumexp trick for numerical stability
-    mu_hat -= np.max(mu_hat)
-    y_best_hat = np.exp(beta * (mu_hat))
-    S_hat = np.sum(y_best_hat)
-    budget = np.sum(budget_vec)
-    z = y_best_hat / S_hat
+    # Using logsumexp trick for numerical stability
+    final_mu_hat = updated_mu_hat - np.max(updated_mu_hat)
+    y_hat = np.exp(beta * (final_mu_hat))
+    s_hat = np.sum(y_hat)
+    budget = np.sum(d_used_updated).item()
 
-    return best_index_hat, z, budget
+    return best_indices, y_hat / s_hat, budget
+
 
 if __name__ == "__main__":
-    print(exact_computation_epsilon)
-    np.random.seed(777)
+    # call something?
