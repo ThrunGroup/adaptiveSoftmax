@@ -1,20 +1,23 @@
 import numpy as np
 from numba import njit
+from typing import Tuple, List, Any
 from constants import exact_computation_epsilon
 
-# TODO(@ryank): Please go over docstrings
-
 @njit
-def approx_sigma_bound_nb(A, x, num_samples):
+def approx_sigma_bound_nb(
+    A: np.ndarray,
+    x: np.ndarray,
+    num_samples: int
+) -> float:
     """
-    Function to approximate sigma more rigorously. For now, we assume sigma is passed in as a parameter
-    Parameters:
-        A (ndarray[(Any, d), np.float]): Matrix A in the original paper
-        x (ndarray[(d,), np.float]): Vector x in the original paper
-        num_samples (int): number of samples to use for approximating sigma
+    Function to approximate sigma more rigorously. We return the median of the std for the estimation
+    (i.e. arm pull) across all arms. But, for now, we assume sigma is passed in as a parameter
 
-    Returns:
-        float: median of the std for the estimation(arm pull) across all arms
+    :param A: Matrix A in the original paper
+    :param x: Vector x in the original paper
+    :param num_samples: number of samples to use for approximating sigma
+
+    :returns: the sigma approximation
     """
     elmul = A[:, :num_samples] * x[:num_samples]
     sigma = np.std(elmul, axis=1)
@@ -23,59 +26,49 @@ def approx_sigma_bound_nb(A, x, num_samples):
 
 @njit
 def estimate_softmax_normalization(
-    atoms,
-    query,
-    beta,
-    epsilon,
-    delta,
-    sigma,
-    verbose=False,
-):
+    atoms: np.ndarray,
+    query: np.ndarray,
+    beta: float,
+    epsilon: float,
+    delta: float,
+    sigma: float,
+    verbose: bool = False,
+) -> Tuple[float, np.ndarray, np.ndarray]:
     """
     This is Algorithm 1 from the paper (adaApprox).
-    Approximates the normalization constant of softmax function(S in the original paper, denoted as S below)
-    within multiplicative error of epsilon with probability of 1 - delta.
-    Returns estimate on the S, estimate on mu, and the budgets spent on each arm
+    Approximates the normalization constant of softmax function (i.e. denoted as S in the original paper) within
+    epsilon multiplicative error with probability 1 - delta.
 
-    Parameters:
-        atoms (ndarray[(n, d), np.float]): Matrix A in the original paper
-        query (ndarray[(d,), np.float]): Vector x in the original paper
-        beta (float): beta in the original paper
-        epsilon (float): bound on the multiplicative error of estimation for S
-        delta (float): probability of failure of estimation for S
-        sigma (float): median of std(sub-gaussian parameter) for the estimation(arm pull) across all arms
-        # TODO(@ryank): Could you write this in more natural sentence?
-        verbose (bool): indicator for verbosity
+    :param atoms: Matrix A in the original paper
+    :param query: Vector x in the original paper
+    :param beta: beta in the original paper
+    :param epsilon: bound on the multiplicative error of estimation for S
+    :param delta: probability of failure of estimation for S
+    :param sigma: sub-gaussianity parameter for the arm pull across all arms
 
-    Returns:
-        float: estimation on S
-        ndarray[(n,), np.float]: estimation on mu
-        ndarray[(n,), np.int64]: budgets spent on each arm
+    :returns: the approximation for S
     """
-
-    if verbose:
-        true_mu = atoms @ query
-
     n = atoms.shape[0]
     d = query.shape[0]
-    T0 = int(np.ceil(min(17 * beta ** 2 * sigma ** 2 * np.log(6 * n / delta), d)))
+    T0 = int(np.ceil(
+            min(
+                # theoretical complexity
+                17 * beta ** 2 * sigma ** 2 * np.log(6 * n / delta),
+                d
+            )
+    ))
 
-    if verbose:
-        print("T0:", T0)
-
-    if T0 == d:
-        # TODO(@ryank, lukehan): Add a comment that we're doing exact computation
-        # Doing exact computation because uniform sampling's budget is over d(cost of exact computation)
+    # Do exact computation if theoretical complexity isn't less than dimension d
+    # TODO(@lukehan): (Across all algorithm) Seperate computational trick so it would not affect statistics
+    # TODO(@lukehan): i.e. only calculate estimate on mu, and calculate values need for softmax estimation at the very end
+    if T0 >= d:
         mu = (atoms @ query).astype(np.float64)
-        # TODO(@ryank, lukehan): Add a comment that we're logsumexp trick
-        #Using logsumexp trick for numerical stability
-        # TODO(@lukehan): (Across all algorithm) Seperate computational trick so it would not affect statistics
-        # TODO(@lukehan): i.e. only calculate estimate on mu, and calculate values need for softmax estimation at the very end
-        mu -= np.max(mu)
+        mu -= np.max(mu)  # logsum trick for numerical stability
         S_hat = np.sum(np.exp(mu))
 
         if verbose:
             # TODO(@lukehan): add beta to errors
+            true_mu = atoms @ query
             first_order_error = np.sum(np.exp(beta * mu) * beta * (true_mu - mu))
             second_order_error = np.sum(np.exp(beta * mu) * beta**2 * (true_mu - mu)**2)
             print(np.full((n,), d).dtype)
