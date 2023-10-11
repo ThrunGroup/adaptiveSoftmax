@@ -2,6 +2,10 @@ import numpy as np
 from numba import njit
 
 
+# TODO(@lukehan, @ryank): add return typehints throughout
+# TODO(@lukehan, @ryank): add return docstrings throughout
+# TODO(@lukehan, @ryank): add param typehints throughout
+
 @njit
 def approx_sigma_bound_nb(A, x, num_samples):
     """
@@ -46,7 +50,10 @@ def find_topk_arms(
     num_found = 0
     best_ind = np.empty(n_atoms, dtype=np.int64)
     mask = np.ones(n_atoms, dtype='bool')   # initially all candidates are valid
-    while True:
+
+    terminated = False
+    # TODO(@ryank, lukehan): change while True to actually have an informative variable condition name
+    while not terminated:
         # Run single iteration of successive elimination with statistics shared from normalization step.
         # Namely, the approximation of mu (i.e. mu_approx) and the number of arm pulls made previously (i.e. d_used)
         # TODO(lukehan): d_used + 1(denominator) should be in the square root
@@ -57,7 +64,11 @@ def find_topk_arms(
         # update the mask to get the surviving arm indices
         max_index = np.argmax(mu_approx)
         lower_bound = mu_approx[max_index] - c_interval[max_index]
+
+        # TODO(@ryank, lukehan): Make this a copy
         prev_mask = mask
+
+        # # TODO(@ryank, lukehan): Break second condition into new variable
         mask = mask & (mu_approx + c_interval) >= lower_bound
         surviving_arms = np.nonzero(mask)[0]    # candidates for a single iteration
 
@@ -65,13 +76,18 @@ def find_topk_arms(
         if len(surviving_arms) <= k - num_found:
             best_ind[:len(surviving_arms)] = surviving_arms
             num_found += len(surviving_arms)
+
+            # TODO(@ryank, lukehan): Not one or the other (negative or)
             mask = np.logical_xor(prev_mask, mask)  # so we don't look at the arms we already found
             surviving_arms = np.nonzero(mask)[0]
 
         # compute exactly if there's only 5% of the original arms left, or we've already sampled past d
+        # TODO(@ryank, lukehan): Move 0.05 to constants.py -- no magic numbers
         threshold = np.ceil(atoms.shape[0] * 0.05)
+
         compute_exactly = len(surviving_arms) < threshold or np.max(d_used) > (dim - batch_size)
         if compute_exactly or num_found > k:
+            terminated = True
             break
 
         # update mu approximation with more samples
@@ -119,7 +135,10 @@ def estimate_softmax_normalization_warm_nb(
     What does this do?
     """
     # TODO: when T0=d, return bruteforce
+
+    # TODO(@ryank, lukehan): Brute force computation should not be done?
     true_mu = atoms @ query
+
     n = atoms.shape[0]
     d = query.shape[0]
     T0 = int(np.ceil(min(np.ceil(17 * beta ** 2 * sigma ** 2 * np.log(6 * n / delta)), d)))
@@ -146,39 +165,26 @@ def estimate_softmax_normalization_warm_nb(
     C = (2 * sigma ** 2 * np.log(6 * n / delta) / T0) ** 0.5
 
     mu_hat_aux = (mu_hat - C) * beta
-    # TODO(@lukehan): Add sophisticated numericall stability measure
+
+    # TODO(@lukehan): Add sophisticated numerical stability measure
     mu_hat_aux -= np.max(mu_hat_aux)
     mu_hat_exp_alpha = np.exp(mu_hat_aux)
     alpha = mu_hat_exp_alpha / np.sum(mu_hat_exp_alpha)
     mu_hat_exp_gamma = np.exp(mu_hat_aux / 2)
     gamma = mu_hat_exp_gamma / np.sum(mu_hat_exp_gamma)
+
     # seperate this from constructing alpha and gamma(maximum element subtraction)
+    # TODO(@ryank, lukehan): Call these ni_term1 etc
+
     Term1 = 17 * np.log((6 * n) / delta)
-    Term2_constant = (16 * (2 ** 0.5) * np.log((6 * n) / delta) * np.sum(mu_hat_exp_gamma)**2) / (epsilon * np.sum(mu_hat_exp_alpha))
-    Term3_constant = (16 * np.log(12 / delta)) / (epsilon ** 2)
+    ni_term2 = gamma * (16 * (2 ** 0.5) * np.log((6 * n) / delta) * np.sum(mu_hat_exp_gamma)**2) / (epsilon * np.sum(mu_hat_exp_alpha))
+    ni_term3 = alpha * (16 * np.log(12 / delta)) / (epsilon ** 2)
 
-    if verbose:
-        print("ratio:", np.sum(mu_hat_exp_gamma)**2 / (np.sum(mu_hat_exp_alpha)))
-
-    Term2 = gamma * Term2_constant
-    Term3 = alpha * Term3_constant
-
-    if verbose:
-        print("T1:", Term1)
-        print("T2:", Term2)
-        print("T3:", Term3)
-        print("Sums:", n*Term1, np.sum(Term2), np.sum(Term3))
-
-    #TODO: probably n_samples = max(Term1, Term2, Term3)
-    n_samples = (Term2 + Term3) + Term1
+    # TODO(@ryank, lukehan): probably n_samples = max(Term1, Term2, Term3)
+    n_samples = (ni_term2 + ni_term3) + Term1
     n_samples.astype(np.int64)
     n_samples = np.ceil(np.minimum(beta**2 * sigma**2 * n_samples, d)).astype(np.int64)
 
-    if verbose:
-        print("prior scaling:", n_samples)
-        #TODO: add beta
-        print("estimate n_i:", sigma**2 * n_samples)
-        print("T:", np.sum(sigma**2 * n_samples))
 
     mu_hat_refined = np.empty(n)
     # TODO(@lukehan): how to incorporate beta?
@@ -186,10 +192,23 @@ def estimate_softmax_normalization_warm_nb(
         if n_samples[i] == d:
             mu_hat_refined[i] = atoms[i] @ query
         else:
+            # TODO(@ryank, lukehan): Should this be T0:T0 + n_samples[i]?
             mu_hat_refined_aux = d * atoms[i, T0:n_samples[i]] @ query[T0:n_samples[i]]
             mu_hat_refined[i] = (mu_hat[i] * T0 + mu_hat_refined_aux) / max(n_samples[i], 1)
 
     if verbose:
+        print("ratio:", np.sum(mu_hat_exp_gamma) ** 2 / (np.sum(mu_hat_exp_alpha)))
+
+        print("T1:", Term1)
+        print("T2:", ni_term2)
+        print("T3:", ni_term3)
+        print("Sums:", n * Term1, np.sum(ni_term2), np.sum(ni_term3))
+
+        print("prior scaling:", n_samples)
+        # TODO(@ryank, lukehan): add beta
+        print("estimate n_i:", sigma ** 2 * n_samples)
+        print("T:", np.sum(sigma ** 2 * n_samples))
+
         first_order_error = np.sum(np.multiply(np.exp(mu_hat_refined), (true_mu - mu_hat_refined)))
         second_order_error = np.sum(np.multiply(np.exp(mu_hat_refined), (true_mu - mu_hat_refined)**2))
         print("first order error:", first_order_error / np.sum(np.exp(beta * true_mu)))
@@ -201,6 +220,7 @@ def estimate_softmax_normalization_warm_nb(
 
     mu_hat_refined_exp = np.exp(mu_hat_refined)
     S_hat = np.sum(mu_hat_refined_exp)
+
     # Potential hazard: max value of mu_hat for alpha construction
     # and max value of mu hat for S_hat estimation is different, which may
     # result in incorrect sampling or other problems?
@@ -208,6 +228,8 @@ def estimate_softmax_normalization_warm_nb(
 
 
 # adaSoftmax with warm start
+
+# TODO(@ryank, lukehan): Arguments one per line
 @njit
 def ada_softmax_nb(A, x, beta, epsilon, delta, n_sigma_sample, k, verbose=False):
     """
@@ -220,14 +242,15 @@ def ada_softmax_nb(A, x, beta, epsilon, delta, n_sigma_sample, k, verbose=False)
         
     # TODO(@lukehan): do NOT compute the S_hat here, just compute estimate on mu
     S_hat, mu_hat, budget_vec = estimate_softmax_normalization_warm_nb(A, x, beta, epsilon / 2, delta / 3, sigma)
-    best_index_hat, budget_mip, mu_hat, budget_vec = find_topk_arms(A,
-                                                                                         x,
-                                                                                         sigma,
-                                                                                         delta / 3,
-                                                                                         batch_size=16,
-                                                                                         k=k,
-                                                                                         mu=mu_hat,
-                                                                                        budget_vec=budget_vec,
+    best_index_hat, budget_mip, mu_hat, budget_vec = find_topk_arms(
+        A,
+        x,
+        sigma,
+        delta / 3,
+        batch_size=16,
+        k=k,
+        mu=mu_hat,
+        budget_vec=budget_vec,
     )
     best_index_hat = best_index_hat[:k]
 
