@@ -4,7 +4,7 @@ import torch
 from hadamard_transform import randomized_hadamard_transform, hadamard_transform
 import sys, os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'adaptive_softmax'))
-from adasoftmax import ada_softmax
+from adasoftmax import ada_softmax, approx_sigma
 
 
 if __name__ == "__main__":
@@ -38,8 +38,7 @@ if __name__ == "__main__":
         total_budget = 0
 
         for i in range(N_EXPERIMENTS):
-
-            A = np.random.normal(loc=0, scale=0.1, size=(n, d))
+            A = np.random.normal(loc=0, scale=1, size=(n, d))
 
             # normalize all rows of A to have same l2 norm
             # this is to ensure that i = argmax(A@A[i]), with reasonable "gain"
@@ -55,11 +54,6 @@ if __name__ == "__main__":
             z = np.exp(mu) / np.sum(np.exp(mu))
 
             gain = n * np.sum(np.exp(2 * (mu - np.max(mu)))) / (np.sum(np.exp(mu - np.max(mu)))**2)
-            #print("gain:", gain)
-            """
-            transform_mu = 
-            transform_gain = 
-            """
 
             best_index_hat, z_hat, bandit_budget = ada_softmax(A=A,
                                                                x=x,
@@ -70,13 +64,9 @@ if __name__ == "__main__":
                                                                k=k,
                                                                )
 
-            #print("best_index:", best_index_hat)
-
-
             total_budget += bandit_budget
 
             cur_epsilon = np.abs(z_hat[best_index_hat] - z[best_index_hat]) / z[best_index_hat]
-            #print(z_hat[best_index_hat], z[best_index_hat], np.max(z))
 
             if cur_epsilon[0] > 1e-2:
                 print(cur_epsilon)
@@ -100,7 +90,6 @@ if __name__ == "__main__":
         print("=>delta:", imp_delta)
         print("=>average budget:", average_budget)
         print("=>average error:", imp_epsilon)
-        #print("=>wrong_approx_num:", wrong_approx_num)
 
         budget_list.append(average_budget)
 
