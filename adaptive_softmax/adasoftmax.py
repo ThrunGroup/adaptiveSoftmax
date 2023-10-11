@@ -29,7 +29,7 @@ def approx_sigma(
     for i in range(n_arms):
         sigma[i] = np.std(elmul[i])
     # TODO(@lukehan): Should x.shape[0] be removed here? => Need to check with Tavor
-    return x.shape[0] * np.max(sigma)
+    return x.shape[0] * np.median(sigma)
 
 @njit
 def estimate_mu_hat(
@@ -94,9 +94,8 @@ def estimate_mu_hat(
     log_term = np.log((6 * n) / delta)
     term1 = 17 * log_term
     term2 = 16 * (2 ** 0.5) * log_term * np.sum(gamma_numer) * gamma_numer / (epsilon * np.sum(alpha_numer))
-    term3 =  (16 * np.log(12 / delta)) * alpha_numer / ((epsilon ** 2) * np.sum(alpha_numer))
+    term3 = (16 * np.log(12 / delta)) * alpha_numer / ((epsilon ** 2) * np.sum(alpha_numer))
     n_samples = np.maximum(term1, term2, term3).astype(np.int64)
-    #n_samples = (term1 + term2 + term3).astype(np.int64)
     n_samples = np.ceil(
         np.minimum(beta**2 * sigma**2 * n_samples, d)
     ).astype(np.int64)

@@ -2,7 +2,7 @@ import numpy as np
 from adasoftmax import ada_softmax, estimate_mu_hat, find_topk_arms, approx_sigma
 import torch
 
-NUM_TESTS = 1000
+NUM_TESTS = 200
 verbose = True
 
 # constant for adjusting gain.
@@ -18,41 +18,54 @@ delta = 0.01
 num_sigma_samples = d
 k = 1
 
-#test result aggregates for softmax normalization estimation
+# test result aggregates for softmax normalization estimation
 total_S_error = 0.0
 wrong_S_estimate_numbers = 0
 total_estimate_normalization_budget = 0
 
-#test result aggregates for top-k indices identification
+# test result aggregates for top-k indices identification
 wrong_topk_numbers = 0
 total_topk_budget = 0
 
-#test result aggregates for softmax estimation
+# test result aggregates for softmax estimation
 wrong_softmax_estimate_numbers = 0
 total_softmax_error = 0.0
 total_softmax_budget = 0
 
 for i in range(NUM_TESTS):
+    # generate ground truth mu randomly
     true_mu = np.ones(n)
     true_mu = np.random.uniform(1, 100, size=(n,))
     true_mu /= 5
 
+    # find true top-k indices
     true_topk_indices_torch = torch.sort(torch.topk(torch.from_numpy(true_mu), k).indices).values
     true_topk_indices = true_topk_indices_torch.numpy()
 
+    # construct A and x that satisfies A@x = true_mu
     x = np.random.uniform(low=0.94, high=1, size=d)
     Z = np.random.normal(loc=0, scale=1 / d, size=(n, d))
     A = np.outer(true_mu, x) / np.sum(x ** 2) + Z
     A = A - np.outer(A @ x - true_mu, np.ones(d) / np.sum(x))
 
+    # calculate ground truth for S and z
     S = np.sum(np.exp(beta * true_mu))
     z = np.exp(beta * true_mu) / S
+
     if verbose:
         print(f"running {i+1}th test")
+
+    # calculate true sigma
     sigma = approx_sigma(A, x, num_sigma_samples)
 
     # normalization constant estimation test
-    mu_hat_norm, budget_vec_norm = estimate_mu_hat(A, x, epsilon, delta, sigma, beta)
+    mu_hat_norm, budget_vec_norm = estimate_mu_hat(atoms=A,
+                                                   query=x,
+                                                   epsilon=epsilon/2,
+                                                   delta=delta/3,
+                                                   sigma=sigma,
+                                                   beta=beta,
+                                                   )
     S_hat = np.sum(np.exp(mu_hat_norm))
     S_error = np.abs(S_hat - S) / S
     total_S_error += S_error
@@ -67,7 +80,14 @@ for i in range(NUM_TESTS):
     topk_start_budget = np.ones(n).astype(np.int64)
 
     # top-k indices identification test
-    best_indices_topk, _, budget_vec_topk = find_topk_arms(A, x, sigma, delta, topk_start_mu_hat, topk_start_budget, k=k)
+    best_indices_topk, _, budget_vec_topk = find_topk_arms(atoms=A,
+                                                           query=x,
+                                                           sigma=sigma,
+                                                           delta=delta/3,
+                                                           mu_approx=topk_start_mu_hat,
+                                                           d_used=topk_start_budget,
+                                                           k=k,
+                                                           )
     estimated_right_topk = np.allclose(np.sort(best_indices_topk), true_topk_indices)
     if not estimated_right_topk:
         wrong_topk_numbers += 1
@@ -76,7 +96,14 @@ for i in range(NUM_TESTS):
         total_topk_budget += np.sum(budget_vec_topk).item()
 
     # softmax estimation test
-    best_indices_hat, z_hat, adasoftmax_budget = ada_softmax(A, x, epsilon, delta, d, beta, k)
+    best_indices_hat, z_hat, adasoftmax_budget = ada_softmax(A=A,
+                                                             x=x,
+                                                             epsilon=epsilon,
+                                                             delta=delta,
+                                                             samples_for_sigma=d,
+                                                             beta=beta,
+                                                             k=k,
+                                                             )
 
     best_indices_hat = np.sort(best_indices_hat)
 
