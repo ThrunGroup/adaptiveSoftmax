@@ -3,116 +3,107 @@ from numba import njit
 
 
 @njit
-def approx_sigma_bound_nb(A, x, n_sigma_sample):
+def approx_sigma_bound_nb(A, x, num_samples):
     """
-    Add comment here
+    Function to approximate sigma more rigorously. For now, we assume sigma is passed in as a parameter
+    :param A:
+    :param x:
+    :param num_samples:
     """
-    # NOTE: We're returning sigma as a sub-gaussian parameter(std of arm pull, not aij*xj)
-    elmul = np.multiply(A[:, :n_sigma_sample], x[:n_sigma_sample])
+    elmul = np.multiply(A[:, :num_samples], x[:num_samples])
     sigma = np.std(elmul, axis=1)
     return x.shape[0] * np.median(sigma)
 
 @njit
-def compute_mip_batch_topk_ver2_warm_nb(
-        atoms,
-        query,
-        sigma,
-        delta,
-        batch_size=16,
-        k=1,
-        mu=None,
-        budget_vec=None,
+def find_topk_arms(
+    atoms,
+    query,
+    sigma,
+    delta,
+    mu_approx,
+    d_used,
+    batch_size=16,
+    k=1,
 ):
     """
-    does same thing as previous, but instead of doing multiplication between single element of A and x,
-    it sequentially slices 'batch_size' elements from left to right, and performs inner product to
-    pull an arm.
+    Function to identify the top k arms where each arm is ____
+    :param atoms: the matrix A in original paper
+    :param query: the vector x in original paper
+    :param sigma: the sub-gaussianity parameter for an arm pull
+    :param delta: probability of being incorrect
+    :param mu_approx: mu obtained from the normalization approximation
+    :param d_used: number of arm pulls per arm
+    :param batch_size: the batch size
+    :param k: the number of arms we want to identify
     """
     dim = len(query)
     n_atoms = len(atoms)
-    best_ind = np.empty(n_atoms, dtype=np.int64)
-    found_indices_num = 0
 
     # case where no best-arm identification is needed
     if k == n_atoms:
-        return np.arange(n_atoms), 0, mu, budget_vec
+        return np.arange(n_atoms), mu_approx, d_used
 
-    d_used = budget_vec
-    n_samples = 0  # instrumentation
-    max_index = np.argmax(mu)
-    max_mu = mu[max_index]
-    # TODO(lukehan): d_used + 1(denominator) should be in the square root
+    num_found = 0
+    best_ind = np.empty(n_atoms, dtype=np.int64)
+    mask = np.ones(n_atoms, dtype='bool')   # initially all candidates are valid
+    while True:
+        # Run single iteration of successive elimination with statistics shared from normalization step.
+        # Namely, the approximation of mu (i.e. mu_approx) and the number of arm pulls made previously (i.e. d_used)
+        # TODO(lukehan): d_used + 1(denominator) should be in the square root
+        numer = 2 * np.log(4 * n_atoms * d_used ** 2 / delta)
+        denom = d_used + 1
+        c_interval = sigma * np.sqrt(numer / denom)
 
-    C_numerator = sigma * 2 * np.log(4 * n_atoms * d_used**2 / delta)
-    C_denominator = d_used + 1
-    if d_used is not None:
-        C = np.sqrt(C_numerator / C_denominator)
-    else:
-        C = np.zeros(n_atoms)
+        # update the mask to get the surviving arm indices
+        max_index = np.argmax(mu_approx)
+        lower_bound = mu_approx[max_index] - c_interval[max_index]
+        prev_mask = mask
+        mask = mask & (mu_approx + c_interval) >= lower_bound
+        surviving_arms = np.nonzero(mask)[0]    # candidates for a single iteration
 
-    if mu is not None:
-        solution_mask = (mu + C) >= (max_mu - C[max_index])
-    else:
-        solution_mask = np.ones(n_atoms, dtype="bool")
+        # revive previously eliminated arms if we have less than k surviving arms
+        if len(surviving_arms) <= k - num_found:
+            best_ind[:len(surviving_arms)] = surviving_arms
+            num_found += len(surviving_arms)
+            mask = np.logical_xor(prev_mask, mask)  # so we don't look at the arms we already found
+            surviving_arms = np.nonzero(mask)[0]
 
-    solutions = np.nonzero(solution_mask)[0]
-    if len(solutions) <= k:
-        best_ind[: len(solutions)] = solutions
-        found_indices_num += len(solutions)
-        solution_mask = np.logical_not(solution_mask)
-        solutions = np.nonzero(solution_mask)[0]
+        # compute exactly if there's only 5% of the original arms left, or we've already sampled past d
+        threshold = np.ceil(atoms.shape[0] * 0.05)
+        compute_exactly = len(surviving_arms) < threshold or np.max(d_used) > (dim - batch_size)
+        if compute_exactly or num_found > k:
+            break
 
-    brute_force_threshold = np.ceil(atoms.shape[0] * 0.05)
-    is_not_over_bruteforce_threshold = len(solutions) > brute_force_threshold
-    have_not_found_topk = found_indices_num < k
-    have_not_sampled_arm_fully = np.max(d_used) < dim - batch_size
-    while is_not_over_bruteforce_threshold and have_not_found_topk and have_not_sampled_arm_fully:
-        tmp = np.empty(np.sum(solution_mask))
-        for i, atom_index in enumerate(solutions):
-            v1 = atoms[atom_index, d_used[atom_index]: d_used[atom_index] + batch_size]
-            v2 = query[d_used[atom_index]:d_used[atom_index] + batch_size]
-            tmp[i] = v1 @ v2
+        # update mu approximation with more samples
+        sampled_mu_approx = np.empty(np.sum(mask))
+        for i, atom_index in enumerate(surviving_arms):
+            samples_used = d_used[atom_index]
+            v1 = atoms[atom_index, samples_used: samples_used + batch_size]
+            v2 = query[samples_used: samples_used + batch_size]
+            sampled_mu_approx[i] = v1 @ v2
 
-        numerator = np.multiply(d_used[solution_mask], mu[solutions]) + tmp * dim
-        denominator = d_used[solution_mask] + batch_size
-        mu[solutions] = np.divide(numerator,denominator)
-        n_samples += len(solutions) * batch_size
+        # we need to scale the mu approximation accordingly
+        numer = mu_approx[surviving_arms] * d_used[mask] + sampled_mu_approx * dim
+        mu_approx[surviving_arms] = numer / (d_used[mask] + batch_size)
 
-        # TODO(@lukehan): sigma should be outside squareroot
-        C_numerator = sigma * 2 * np.log(4 * n_atoms * d_used ** 2 / delta)
-        C_denominator = d_used + 1
-        C = np.sqrt(np.divide(C_numerator, C_denominator))
+    # Brute force computation for the remaining candidates
+    # TODO: need to fix for the case where np.max(d_used) > (dim - batch_size)
+    if compute_exactly:
+        curr_mu = d_used * mu_approx
+        for i, atom_index in enumerate(surviving_arms):
+            curr_mu[i] += atoms[atom_index, d_used[atom_index]:] @ query[d_used[atom_index]:]
 
-        max_index = solutions[np.argmax(mu[solution_mask])]
-        max_mu = mu[max_index]
-        d_used[solutions] += batch_size
-        solution_mask_before = solution_mask
-        solution_mask = solution_mask & (mu + C >= max_mu - C[max_index])
-        solutions = np.nonzero(solution_mask)[0]
+        d_used[surviving_arms] = dim
+        mu = np.divide(curr_mu, d_used)
+        mu_exact_search = curr_mu.copy()
 
-        # TODO(@lukehan): Break this code into a function and consolidate with repeated sections
-        if len(solutions) <= k - found_indices_num:
-            best_ind[found_indices_num: found_indices_num + len(solutions)] = solutions
-            found_indices_num += len(solutions)
-            solution_mask = np.logical_xor(solution_mask_before, solution_mask)
-            solutions = np.nonzero(solution_mask)[0]
-
-    if found_indices_num < k:
-        mu_exact = np.multiply(d_used, mu)
-        for i, atom_index in enumerate(solutions):
-            mu_exact[i] += atoms[atom_index, d_used[atom_index]:] @ query[d_used[atom_index]:]
-
-        d_used[solutions] = dim
-        mu = np.divide(mu_exact, d_used)
-        mu_exact_search = mu_exact.copy()
-
-        while found_indices_num < k:
+        while num_found < k:
             best_index = np.argmax(mu_exact_search)
-            best_ind[found_indices_num] = best_index
-            found_indices_num += 1
+            best_ind[num_found] = best_index
+            num_found += 1
             mu_exact_search[best_index] = -np.inf
 
-    return best_ind, n_samples, mu, d_used
+    return best_ind[:k], mu, d_used
 
 @njit
 def estimate_softmax_normalization_warm_nb(
@@ -229,7 +220,7 @@ def ada_softmax_nb(A, x, beta, epsilon, delta, n_sigma_sample, k, verbose=False)
         
     # TODO(@lukehan): do NOT compute the S_hat here, just compute estimate on mu
     S_hat, mu_hat, budget_vec = estimate_softmax_normalization_warm_nb(A, x, beta, epsilon / 2, delta / 3, sigma)
-    best_index_hat, budget_mip, mu_hat, budget_vec = compute_mip_batch_topk_ver2_warm_nb(A,
+    best_index_hat, budget_mip, mu_hat, budget_vec = find_topk_arms(A,
                                                                                          x,
                                                                                          sigma,
                                                                                          delta / 3,
