@@ -7,7 +7,7 @@ from constants import (
     BETA,
 )
 
-@njit
+
 def approx_sigma(
     A: np.ndarray,
     x: np.ndarray,
@@ -23,12 +23,15 @@ def approx_sigma(
 
     :returns: the sigma approximation
     """
+    n_arms = A.shape[0]
     elmul = A[:, :num_samples] * x[:num_samples]
-    sigma = np.std(elmul, axis=1)
+    sigma = np.empty(n_arms)
+    for i in range(n_arms):
+        sigma[i] = np.std(elmul[i])
     # TODO(@lukehan): Should x.shape[0] be removed here? => Need to check with Tavor
-    return x.shape[0] * np.median(sigma)
+    return x.shape[0] * np.max(sigma)
 
-@njit
+
 def estimate_mu_hat(
     atoms: np.ndarray,
     query: np.ndarray,
@@ -60,7 +63,7 @@ def estimate_mu_hat(
                 17 * beta ** 2 * sigma ** 2 * np.log(6 * n / delta),
                 d
             )
-    ).item()
+    ).astype(np.int).item()
 
     # Do exact computation if theoretical complexity isn't less than dimension d
     if T0 >= d:
@@ -92,7 +95,8 @@ def estimate_mu_hat(
     term1 = 17 * log_term
     term2 = 16 * (2 ** 0.5) * log_term * np.sum(gamma_numer) * gamma_numer / (epsilon * np.sum(alpha_numer))
     term3 =  (16 * np.log(12 / delta)) * alpha_numer / ((epsilon ** 2) * np.sum(alpha_numer))
-    n_samples = np.maximum(term1, term2, term3).astype(np.int64)  
+    #n_samples = np.maximum(term1, term2, term3).astype(np.int64)
+    n_samples = (term1 + term2 + term3).astype(np.int64)
     n_samples = np.ceil(
         np.minimum(beta**2 * sigma**2 * n_samples, d)
     ).astype(np.int64)
@@ -127,7 +131,7 @@ def estimate_mu_hat(
 
     return updated_mu_hat, n_samples
 
-@njit
+
 def find_topk_arms(
     atoms: np.ndarray,
     query: np.ndarray,
@@ -225,7 +229,7 @@ def find_topk_arms(
 
 
 # adaSoftmax with warm start
-@njit
+
 def ada_softmax(
     A: np.ndarray,
     x: np.ndarray,
@@ -256,7 +260,13 @@ def ada_softmax(
     if verbose:
         print("sigma:", sigma)
 
-    mu_hat, d_used = estimate_mu_hat(A, x, beta, epsilon / 2, delta / 3, sigma)
+    mu_hat, d_used = estimate_mu_hat(
+        atoms = A,
+        query = x,
+        epsilon = epsilon / 2,
+        delta = delta / 3,
+        sigma = sigma,
+        beta = beta)
     best_indices, updated_mu_hat, d_used_updated = find_topk_arms(
         atoms=A,
         query=x,
@@ -288,8 +298,10 @@ def ada_softmax(
     s_hat = np.sum(y_hat)
     budget = np.sum(d_used_updated).item()
 
+
     return best_indices, y_hat / s_hat, budget
 
 
 if __name__ == "__main__":
     # call something?
+    pass
