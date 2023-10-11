@@ -1,15 +1,14 @@
 import numpy as np
-from numba import njit
 import matplotlib.pyplot as plt
 import torch
 from hadamard_transform import randomized_hadamard_transform, hadamard_transform
-np.random.seed(777)
 import sys, os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'adaptive_softmax'))
 from adasoftmax import ada_softmax
 
 
 if __name__ == "__main__":
+    np.random.seed(777)
     # flag variables
     use_hadamard_transform = False
     verbose = True
@@ -49,7 +48,8 @@ if __name__ == "__main__":
                 A[j] = A[j] / (A_norm[j] / 2.4)
 
 
-            x = A[i] #Need to change
+            best_index = int(np.random.uniform(low=0.0, high=9.9, size=1).item())
+            x = A[best_index]
             mu = A @ x
             mu -= np.max(mu)
             z = np.exp(mu) / np.sum(np.exp(mu))
