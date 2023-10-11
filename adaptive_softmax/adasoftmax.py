@@ -59,15 +59,11 @@ def estimate_softmax_normalization(
     ))
 
     # Do exact computation if theoretical complexity isn't less than dimension d
-    # TODO(@lukehan): (Across all algorithm) Seperate computational trick so it would not affect statistics
-    # TODO(@lukehan): i.e. only calculate estimate on mu, and calculate values need for softmax estimation at the very end
+
     if T0 >= d:
         mu = (atoms @ query).astype(np.float64)
-        mu -= np.max(mu)  # logsum trick for numerical stability
-        S_hat = np.sum(np.exp(mu))
 
         if verbose:
-            # TODO(@lukehan): add beta to errors
             true_mu = atoms @ query
             first_order_error = np.sum(np.exp(beta * mu) * beta * (true_mu - mu))
             second_order_error = np.sum(np.exp(beta * mu) * beta**2 * (true_mu - mu)**2)
@@ -75,7 +71,7 @@ def estimate_softmax_normalization(
             print("first order error:", first_order_error)
             print("second order error:", second_order_error)
 
-        return S_hat, mu, d * np.ones(n).astype(np.int64)
+        return mu, d * np.ones(n).astype(np.int64)
 
     mu_hat = (d / T0) * (atoms[:, :T0] @ query[:T0])
     C = (2 * sigma ** 2 * np.log(6 * n / delta) / T0) ** 0.5
@@ -83,8 +79,6 @@ def estimate_softmax_normalization(
     # Exponents for alpha and gamma
     mu_hat_aux = (mu_hat - C) * beta
 
-    # TODO(@lukehan): Add sophisticated numerical stability measure
-    # TODO(@ryank, lukehan): Add a comment that we're logsumexp trick
     # Using logsumexp trick for numerical stability
     mu_hat_aux -= np.max(mu_hat_aux)
     mu_hat_exp_alpha = np.exp(mu_hat_aux)
@@ -92,32 +86,28 @@ def estimate_softmax_normalization(
     mu_hat_exp_gamma = np.exp(mu_hat_aux / 2)
     gamma = mu_hat_exp_gamma / np.sum(mu_hat_exp_gamma)
 
-    # seperate this from constructing alpha and gamma(maximum element subtraction)
-    # TODO(@ryank, lukehan): Call these ni_term1 etc
-
     ni_term1 = 17 * np.log((6 * n) / delta)
     # TODO(@ryank, lukehan): Break onto several lines
     ni_term2 = gamma * (16 * (2 ** 0.5) * np.log((6 * n) / delta) * np.sum(mu_hat_exp_gamma)**2) / (epsilon * np.sum(mu_hat_exp_alpha))
     ni_term3 = alpha * (16 * np.log(12 / delta)) / (epsilon ** 2)
 
-    # TODO(@ryank, lukehan): probably n_samples = max(Term1, Term2, Term3)
-    n_samples = (ni_term2 + ni_term3) + ni_term1
+    n_samples = np.maximum(ni_term1, ni_term2, ni_term3)
     n_samples.astype(np.int64)
 
     # All terms need to be multiplied by beta^2 * sigma^2
     n_samples = np.ceil(np.minimum(beta**2 * sigma**2 * n_samples, d)).astype(np.int64)
 
     updated_mu_hat = np.empty(n)
-    # TODO(@lukehan): how to incorporate beta?
     for i in range(n):
         if n_samples[i] == d:
             updated_mu_hat[i] = atoms[i] @ query
         else:
-            # TODO(@ryank, lukehan): Should this be T0:T0 + n_samples[i]?
+            # TODO(@ryank, lukehan): Should this be T0:T0 + n_samples[i]? => Discuss with Tavor
             mu_hat_refined_aux = d * atoms[i, T0:n_samples[i]] @ query[T0:n_samples[i]]
             updated_mu_hat[i] = (mu_hat[i] * T0 + mu_hat_refined_aux) / max(n_samples[i], 1)
 
     if verbose:
+        true_mu = atoms @ query
         print("ratio:", np.sum(mu_hat_exp_gamma) ** 2 / (np.sum(mu_hat_exp_alpha)))
 
         print("T1:", ni_term1)
@@ -135,15 +125,10 @@ def estimate_softmax_normalization(
         print("second order error:", second_order_error / np.sum(np.exp(beta * true_mu)))
         print(updated_mu_hat - true_mu)
 
-    # TODO(@lukehan): define seperate vector for mu - max(mu) / mu(untouched)
-    updated_mu_hat -= np.max(updated_mu_hat)
-    mu_hat_refined_exp = np.exp(updated_mu_hat)
-    S_hat = np.sum(mu_hat_refined_exp)
-
     # Potential hazard: max value of mu_hat for alpha construction
     # and max value of mu hat for S_hat estimation is different, which may
     # result in incorrect sampling or other problems?
-    return S_hat, updated_mu_hat, n_samples
+    return updated_mu_hat, n_samples
 
 @njit
 def find_topk_arms(
@@ -153,7 +138,7 @@ def find_topk_arms(
     delta,
     mu_approx,
     d_used,
-    batch_size=16,  # TODO(@ryank, lukehan): Move to constants.py and set batch_size to bigger
+    batch_size=16,  # TODO(@ryank): Move to constants.py and set batch_size to bigger
     k=1,
 ):
     """
@@ -199,30 +184,23 @@ def find_topk_arms(
 
         prev_mask = mask.copy()
 
-        # # TODO(@ryank): Better name for this?
         is_surviving_candidate = (mu_approx + c_interval) >= lower_bound
         mask = mask & is_surviving_candidate
-        # TODO(@ryank, lukehan): (Throughout) Change out np.nonzero: https://numpy.org/doc/stable/reference/generated/numpy.nonzero.html
         # leaving is as it is because we're not interested in nonzero values, but rather nonzero indices of mask
-        # TODO(@lukehan): Find more readable/straightforward way of doing this?
-        surviving_arms = np.nonzero(mask)[0]    # candidates for a single iteration
+        surviving_arms = np.nonzero(mask)[0]
 
         # revive previously eliminated arms if we have less than k surviving arms
         if len(surviving_arms) <= k - num_found:
             best_ind[:len(surviving_arms)] = surviving_arms
             num_found += len(surviving_arms)
 
-            # TODO(@ryank, lukehan): Not one or the other (negative or)
-            # TODO(@ryank): Not sure if negative or would work here, could you check the validity of negative or?
+            # Performing xor to revive candidates that's eliminated at current round
             mask = np.logical_xor(prev_mask, mask)  # so we don't look at the arms we already found
             surviving_arms = np.nonzero(mask)[0]
 
-        # compute exactly if there's only 5% of the original arms left, or we've already sampled past d
+        # TODO(@ryank): Comment on why sub-optimality measure is not needed
 
-        # # TODO(@ryank, lukehan): This is wrong. We should only be computing exactly if mu_hats are epsilon different, not epsilon number of arms
-        threshold = np.ceil(atoms.shape[0] * exact_computation_epsilon)
-
-        compute_exactly = len(surviving_arms) < threshold or np.max(d_used) > (dim - batch_size)
+        compute_exactly = np.max(d_used) > (dim - batch_size)
         if compute_exactly or num_found > k:
             # NOTE: we're not using the terminated variable
             terminated = True
@@ -241,7 +219,6 @@ def find_topk_arms(
         mu_approx[surviving_arms] = numer / (d_used[mask] + batch_size)
 
     # Brute force computation for the remaining candidates
-    # TODO: need to fix for the case where np.max(d_used) > (dim - batch_size)
     if compute_exactly:
         curr_mu = d_used * mu_approx
         for i, atom_index in enumerate(surviving_arms):
@@ -261,7 +238,6 @@ def find_topk_arms(
 
 
 # adaSoftmax with warm start
-# TODO(@ryank, lukehan): Arguments one per line
 @njit
 def ada_softmax(
     A,
@@ -299,10 +275,9 @@ def ada_softmax(
     sigma = approx_sigma_bound_nb(A, x, n_sigma_sample)
     if verbose:
         print("sigma:", sigma)
-        
-    # TODO(@lukehan): do NOT compute the S_hat here, just compute estimate on mu
-    S_hat, mu_hat, budget_vec = estimate_softmax_normalization(A, x, beta, epsilon / 2, delta / 3, sigma)
-    best_index_hat, budget_mip, mu_hat, budget_vec = find_topk_arms(
+
+    mu_hat, budget_vec = estimate_softmax_normalization(A, x, beta, epsilon / 2, delta / 3, sigma)
+    best_index_hat, mu_hat, budget_vec = find_topk_arms(
         A,
         x,
         sigma,
@@ -312,16 +287,13 @@ def ada_softmax(
         mu=mu_hat,
         budget_vec=budget_vec,
     )
-    best_index_hat = best_index_hat[:k]
 
     n_arm_pull = int(min(
         np.ceil((288 * sigma ** 2 * beta ** 2 * np.log(6 / delta)) / (epsilon ** 2)),
         x.shape[0]
     ))
 
-    # TODO(@lukehan): add an if statement to not sample if no additional budget is needed
     for arm_index in best_index_hat:
-        # TODO(@lukehan): Make this more readable
         used_sample = budget_vec[arm_index]
         if used_sample < n_arm_pull:
             mu_additional = x.shape[0] * A[arm_index, used_sample: n_arm_pull] @ x[used_sample: n_arm_pull]
@@ -329,8 +301,10 @@ def ada_softmax(
 
     budget_vec[best_index_hat] = np.maximum(budget_vec[best_index_hat], n_arm_pull)
 
-    # TODO(@lukehan): use computational trick here
+    #Using logsumexp trick for numerical stability
+    mu_hat -= np.max(mu_hat)
     y_best_hat = np.exp(beta * (mu_hat))
+    S_hat = np.sum(y_best_hat)
     budget = np.sum(budget_vec)
     z = y_best_hat / S_hat
 
