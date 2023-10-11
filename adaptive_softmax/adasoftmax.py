@@ -7,7 +7,7 @@ from constants import (
     BETA,
 )
 
-
+@njit
 def approx_sigma(
     A: np.ndarray,
     x: np.ndarray,
@@ -31,7 +31,7 @@ def approx_sigma(
     # TODO(@lukehan): Should x.shape[0] be removed here? => Need to check with Tavor
     return x.shape[0] * np.max(sigma)
 
-
+@njit
 def estimate_mu_hat(
     atoms: np.ndarray,
     query: np.ndarray,
@@ -57,13 +57,13 @@ def estimate_mu_hat(
     """
     n = atoms.shape[0]
     d = query.shape[0]
-    T0 = np.ceil(
+    T0 = int(np.ceil(
             min(
                 # theoretical complexity
                 17 * beta ** 2 * sigma ** 2 * np.log(6 * n / delta),
                 d
             )
-    ).astype(np.int).item()
+    ).item())
 
     # Do exact computation if theoretical complexity isn't less than dimension d
     if T0 >= d:
@@ -95,8 +95,8 @@ def estimate_mu_hat(
     term1 = 17 * log_term
     term2 = 16 * (2 ** 0.5) * log_term * np.sum(gamma_numer) * gamma_numer / (epsilon * np.sum(alpha_numer))
     term3 =  (16 * np.log(12 / delta)) * alpha_numer / ((epsilon ** 2) * np.sum(alpha_numer))
-    #n_samples = np.maximum(term1, term2, term3).astype(np.int64)
-    n_samples = (term1 + term2 + term3).astype(np.int64)
+    n_samples = np.maximum(term1, term2, term3).astype(np.int64)
+    #n_samples = (term1 + term2 + term3).astype(np.int64)
     n_samples = np.ceil(
         np.minimum(beta**2 * sigma**2 * n_samples, d)
     ).astype(np.int64)
@@ -131,7 +131,7 @@ def estimate_mu_hat(
 
     return updated_mu_hat, n_samples
 
-
+@njit
 def find_topk_arms(
     atoms: np.ndarray,
     query: np.ndarray,
@@ -172,6 +172,7 @@ def find_topk_arms(
     while not terminated:
         numer = 2 * np.log(4 * n_atoms * d_used ** 2 / delta)
         c_interval = sigma * np.sqrt(numer / (d_used + 1))
+        c_interval[d_used == dim] = 0
 
         # update the mask to get the surviving arm indices
         max_index = np.argmax(mu_approx)
@@ -189,7 +190,7 @@ def find_topk_arms(
             mask = np.logical_xor(prev_mask, mask)  # revive candidates eliminated at current round
             surviving_arms = np.nonzero(mask)[0]
 
-        compute_exactly = np.max(d_used) > (dim - batch_size)
+        compute_exactly = np.max(d_used[surviving_arms]) > (dim - batch_size)
         if compute_exactly or num_found >= k:
             # NOTE: we're not using the terminated variable
             terminated = True
@@ -213,7 +214,8 @@ def find_topk_arms(
         curr_mu = d_used * mu_approx
         for i, atom_index in enumerate(surviving_arms):
             used = d_used[atom_index]
-            curr_mu[i] += atoms[atom_index, used:] @ query[used:] * dim
+            if used < dim:
+                curr_mu[i] += atoms[atom_index, used:] @ query[used:] * dim
 
         d_used[surviving_arms] = dim
         mu_approx = curr_mu / d_used  # to maintain consistent naming
@@ -229,7 +231,7 @@ def find_topk_arms(
 
 
 # adaSoftmax with warm start
-
+@njit
 def ada_softmax(
     A: np.ndarray,
     x: np.ndarray,

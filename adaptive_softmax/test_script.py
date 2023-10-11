@@ -2,7 +2,8 @@ import numpy as np
 from adasoftmax import ada_softmax, estimate_mu_hat, find_topk_arms, approx_sigma
 import torch
 
-NUM_TESTS = 100
+NUM_TESTS = 1000
+verbose = True
 
 # constant for adjusting gain.
 c = 5
@@ -17,14 +18,16 @@ delta = 0.01
 num_sigma_samples = d
 k = 1
 
-
+#test result aggregates for softmax normalization estimation
 total_S_error = 0.0
 wrong_S_estimate_numbers = 0
 total_estimate_normalization_budget = 0
 
+#test result aggregates for top-k indices identification
 wrong_topk_numbers = 0
 total_topk_budget = 0
 
+#test result aggregates for softmax estimation
 wrong_softmax_estimate_numbers = 0
 total_softmax_error = 0.0
 total_softmax_budget = 0
@@ -44,7 +47,8 @@ for i in range(NUM_TESTS):
 
     S = np.sum(np.exp(beta * true_mu))
     z = np.exp(beta * true_mu) / S
-    print(f"running {i+1}th test")
+    if verbose:
+        print(f"running {i+1}th test")
     sigma = approx_sigma(A, x, num_sigma_samples)
 
     # normalization constant estimation test
@@ -54,11 +58,10 @@ for i in range(NUM_TESTS):
     total_S_error += S_error
     # Refer to algorithm 2, Line 3 in original paper for epsilon bound on normalization constant estimation
     if S_error > epsilon/2:
-        import ipdb; ipdb.set_trace()
         wrong_S_estimate_numbers += 1
     total_estimate_normalization_budget += np.sum(budget_vec_norm).item()
 
-    # generating warm-start vector for find-topk
+    # calculate mu estimate for find-topk
     # This vector would be constructed by estimate_softmax_normalization in ada_softmax
     topk_start_mu_hat = np.array([A[i][0]*x[0] for i in range(n)])
     topk_start_budget = np.ones(n).astype(np.int64)

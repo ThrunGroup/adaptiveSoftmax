@@ -6,31 +6,23 @@ from hadamard_transform import randomized_hadamard_transform, hadamard_transform
 np.random.seed(777)
 import sys, os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'adaptive_softmax'))
-from adasoftmax import ada_softmax_nb
+from adasoftmax import ada_softmax
 
 
 n = 10
 beta = 1
 epsilon = 0.1
 delta = 0.01
-k = 1
-N_EXPERIMENTS = 1
+k = 3
+N_EXPERIMENTS = 100
 
-"""
-true_mu = np.ones(n)
-true_mu[1] = true_mu[1] * c
-
-x = np.random.normal(loc=0.9, scale=0.01, size=d)
-Z = np.random.normal(loc=0, scale=1/d, size=(n, d))
-A = np.outer(true_mu, x)/np.sum(x**2) + Z
-A = A - np.outer(A@x - true_mu, np.ones(d)/np.sum(x))
-"""
 
 dimension_list = list()
 budget_list = list()
 
-for d in range(350000, 460000, 10000):
+for d in range(10000, 110000, 10000):
   dimension_list.append(d)
+  print("dimension:", d)
 
   error_sum = 0.0
   wrong_approx_num = 0
@@ -68,16 +60,14 @@ for d in range(350000, 460000, 10000):
       A[i] = A[i] / (A_norm[i] / 2.4)
 
     dPad = int(2**np.ceil(np.log2(d)))
-    print(f'padded dimension: {dPad}')
-    Apad = np.pad(A,((0,0),(0,dPad-d)),'constant',constant_values=0)
-
+    Apad = np.pad(A,((0,0),(0,dPad-d)),'constant', constant_values=0)
     prng = torch.Generator(device='cpu')
     hadamard_seed = prng.seed()
 
     A_pad_torch = torch.tensor(Apad)
 
     Aprime = randomized_hadamard_transform(A_pad_torch, prng.manual_seed(seed)).numpy()
-    print(Aprime.shape)
+    #print(Aprime.shape)
 
     #generate datapoint
     best_index = int(np.random.uniform(0, 9.9))
@@ -86,9 +76,9 @@ for d in range(350000, 460000, 10000):
     xpad = np.pad(x,(0,dPad-d),'constant',constant_values=0)
     xprime = randomized_hadamard_transform(torch.tensor(xpad.T), prng.manual_seed(seed)).numpy().T
 
-    print(xprime.shape)
+    #print(xprime.shape)
 
-    print("is product same?", np.allclose(A@x,Aprime@xprime))
+    #print("is product same?", np.allclose(A@x,Aprime@xprime))
 
     #calculate ground truth
     mu = A @ x
@@ -96,21 +86,27 @@ for d in range(350000, 460000, 10000):
     z = np.exp(mu) / np.sum(np.exp(mu))
 
     gain = n * np.sum(np.exp(2 * (mu - np.max(mu)))) / (np.sum(np.exp(mu - np.max(mu)))**2)
-    print("gain:", gain)
+    #print("gain:", gain)
     """
     transform_mu = 
     transform_gain = 
     """
 
-    best_index_hat, z_hat, bandit_budget = ada_softmax_nb(A, x, beta, epsilon, delta, dPad, k)
+    best_index_hat, z_hat, bandit_budget = ada_softmax(A=A,
+                                                       x=x,
+                                                       epsilon=epsilon,
+                                                       delta=delta,
+                                                       samples_for_sigma=d,
+                                                       beta=beta,
+                                                       k=k)
 
-    print("best_index:", best_index_hat)
+    #print("best_index:", best_index_hat)
 
 
     total_budget += bandit_budget
 
     cur_epsilon = np.abs(z_hat[best_index_hat] - z[best_index_hat]) / z[best_index_hat]
-    print(z_hat[best_index_hat], z[best_index_hat], np.max(z))
+    #print(z_hat[best_index_hat], z[best_index_hat], np.max(z))
 
     if cur_epsilon[0] > 1e-2:
       print(cur_epsilon)
