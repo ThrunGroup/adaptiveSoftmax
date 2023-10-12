@@ -210,7 +210,15 @@ for dimension in list(range(25600, 25600 + 1, 1000)):
     gain_sum += N_CLASSES * np.sum(np.exp(2 * (mu - np.max(mu)))) / (np.sum(np.exp(mu - np.max(mu)))**2)
 
     # AdaSoftmax
-    bandit_topk_indices, z_hat, bandit_budget = ada_softmax(A_ndarray, x_ndarray, TEMP, epsilon, delta, dimension, top_k)
+    bandit_topk_indices, z_hat, bandit_budget = ada_softmax(A=A_ndarray,
+                                                            x=x_ndarray,
+                                                            epsilon=epsilon,
+                                                            delta=delta,
+                                                            samples_for_sigma=dimension,
+                                                            beta=TEMP,
+                                                            k=top_k,
+                                                            verbose=True
+                                                            )
 
     # TODO(@lukehan): Change how we evaluate delta and epsilon(Like in the adaptive_softmax/test_script.py)
     cur_epsilon = np.abs(z_hat[bandit_topk_indices] - z[bandit_topk_indices]) / z[bandit_topk_indices]
