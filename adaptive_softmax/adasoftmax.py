@@ -262,12 +262,13 @@ def ada_softmax(
         print("sigma:", sigma)
 
     mu_hat, d_used = estimate_mu_hat(
-        atoms = A,
-        query = x,
-        epsilon = epsilon / 2,
-        delta = delta / 3,
-        sigma = sigma,
-        beta = beta)
+        atoms=A,
+        query=x,
+        epsilon=epsilon / 2,
+        delta=delta / 3,
+        sigma=sigma,
+        beta=beta)
+
     best_indices, updated_mu_hat, d_used_updated = find_topk_arms(
         atoms=A,
         query=x,
@@ -295,10 +296,9 @@ def ada_softmax(
 
     # Using logsumexp trick for numerical stability
     final_mu_hat = updated_mu_hat - np.max(updated_mu_hat)
-    y_hat = np.exp(beta * (final_mu_hat))
+    y_hat = np.exp(beta * final_mu_hat)
     s_hat = np.sum(y_hat)
     budget = np.sum(d_used_updated).item()
-
 
     return best_indices, y_hat / s_hat, budget
 

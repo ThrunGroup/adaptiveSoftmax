@@ -3,7 +3,8 @@ from tqdm import tqdm
 from transformers import GPT2LMHeadModel, GPT2TokenizerFast
 from datasets import load_dataset
 
-device = "cpu"
+device = "cuda" if torch.cuda.is_available() else "cpu"
+print("device is ", device)
 model_id = "gpt2"
 model = GPT2LMHeadModel.from_pretrained(model_id).to(device)
 tokenizer = GPT2TokenizerFast.from_pretrained(model_id)

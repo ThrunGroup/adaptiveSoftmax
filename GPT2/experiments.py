@@ -3,16 +3,29 @@ import torch.nn as nn
 import os, sys
 from transformers import GPT2LMHeadModel, GPT2TokenizerFast
 from datasets import load_dataset
-from typing import Union, Tuple
+from copy import deepcopy
+from typing import Union, Tuple, Optional, Callable
 from tqdm import tqdm
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'adaptive_softmax'))
 from adasoftmax import ada_softmax
-from constants import *
+from gpt_constants import (
+    MULTIPLICATIVE_ERROR,
+    DELTA_ERROR,
+)
 
 
-def get_adaptive_forward(
-        model,
+def get_adaptive_forward(model) -> Callable:
+    """
+    Function that redefines the forward pass for GPT2. We do this by switching out
+    lm_head + CELoss to log(adaSoftmax) + NLLLoss. The input parameters are the same throughout and the forward
+    pass should return the log probabilities instead of a dictionary
+
+    :param model: the GPT2LMHeadModel
+    :param: the rest are the same as the original model
+    :returns: the forward pass of the model
+    """
+    def adaptive_forward(
         input_ids: Optional[torch.LongTensor] = None,
         past_key_values: Optional[Tuple[Tuple[torch.Tensor]]] = None,
         attention_mask: Optional[torch.FloatTensor] = None,
@@ -27,61 +40,57 @@ def get_adaptive_forward(
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
-    ) -> Union[Tuple, CausalLMOutputWithCrossAttentions]:
-
-    """
-    Function that redefines the forward pass for GPT2. We do this by switching out
-    lm_head + CELoss to log(adaSoftmax) + NLLLoss. The input parameters are the same throughout and the forward
-    pass should return the log probabilities instead of a dictionary
-
-    :param model: the GPT2LMHeadModel
-    :param: the rest are the same as the original model
-    :returns: the forward pass of the model
-    """
-    labels = None   # NOTE: we only care about the probability so labels isn't used.
-    transformer_outputs = model.transformer(
-        input_ids,
-        past_key_values=past_key_values,
-        attention_mask=attention_mask,
-        token_type_ids=token_type_ids,
-        position_ids=position_ids,
-        head_mask=head_mask,
-        inputs_embeds=inputs_embeds,
-        encoder_hidden_states=encoder_hidden_states,
-        encoder_attention_mask=encoder_attention_mask,
-        use_cache=use_cache,
-        output_attentions=output_attentions,
-        output_hidden_states=output_hidden_states,
-        return_dict=return_dict,
-    )
-    hidden_states = transformer_outputs[0]
-
-    # TODO(@lukehan, ryank): this is inefficient. Add support for tensors and collection of x
-    adaptive_results = []
-    for h_state in hidden_states:
-        _, z, _ = ada_softmax(
-            A=model.lm_head.numpy(),
-            x=h_state.numpy(),
+    ) -> torch.Tensor:
+        labels = None   # NOTE: we only care about the probability so labels isn't used.
+        transformer_outputs = model.transformer(
+            input_ids,
+            past_key_values=past_key_values,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            head_mask=head_mask,
+            inputs_embeds=inputs_embeds,
+            encoder_hidden_states=encoder_hidden_states,
+            encoder_attention_mask=encoder_attention_mask,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
         )
-        adaptive_results.append(z)
+        # size = (batch_size, sequence_length, n_embd)
+        import ipdb; ipdb.set_trace()
+        hidden_states = transformer_outputs[0]
+        shifted_states = hidden_states[..., :-1, :].contiguous()  # this is consistent with naive version
+        flattened_states = shifted_states.view(-1, shifted_states.size(-1))
 
-    log_probabilities = torch.log(torch.tensor(adaptive_results))
-    return log_probabilities
+        adaptive_results = []
+        for state in flattened_states:  # batch_size x (sequence_length - 1) iterations
+            _, z, _ = ada_softmax(
+                A=model.lm_head.numpy(),    # size = (n_embd, vocab_size)
+                x=state.numpy(),  # embedding of single token
+            )
+            adaptive_results.append(z)
+
+        log_probabilities = torch.log(torch.tensor(adaptive_results))
+        return log_probabilities
+
+    return adaptive_forward
 
 
 def sanity_check():
-    device = "gpu" if torch.cuda.is_available else "cpu"
+    # TODO: why is device on cpu even on the cluster??
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     model_id = "gpt2"
     naive_model = GPT2LMHeadModel.from_pretrained(model_id).to(device)
 
     # replace the forward function with the adaptive forward
-    adaptive_model = naive_model.copy()
+    adaptive_model = deepcopy(naive_model)
     adaptive_model.forward = get_adaptive_forward(naive_model)
 
     tokenizer = GPT2TokenizerFast.from_pretrained(model_id)
     test = load_dataset("wikitext", "wikitext-2-raw-v1", split="test")
     encodings = tokenizer("\n\n".join(test["text"]), return_tensors="pt")
-    max_length = model.config.n_positions
+    max_length = naive_model.config.n_positions
     stride = 512
     seq_len = encodings.input_ids.size(1)
 
@@ -96,12 +105,12 @@ def sanity_check():
 
         with torch.no_grad():
             # this will return (lm_logits,) + transformer_outputs[1:]
-            naive_outputs = naive_model(input_ids, labels=target_ids, return_dict=False)
-            naive_ll = nn.LogSoftmax(naive_outputs[0])  # TODO(@ryank): does this indexing behave as intended?
+            naive_output = naive_model(input_ids, labels=target_ids, return_dict=False)
+            naive_ll = nn.LogSoftmax(naive_output[0])  # TODO(@ryank): does this indexing behave as intended?
             adaptive_ll = adaptive_model(input_ids, labels=target_ids)
 
-        naive_lls.append(naive_ll)
-        adaptive_lls.append(adaptive_ll)
+        naive_lls.append(torch.mean(naive_ll))  # TODO: is this dim=0?
+        adaptive_lls.append(torch.mean(adaptive_ll))
 
         if end_loc == seq_len:
             break
