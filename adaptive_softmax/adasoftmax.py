@@ -56,10 +56,11 @@ def estimate_mu_hat(
     """
     n = atoms.shape[0]
     d = query.shape[0]
+    T0_original = 17 * beta ** 2 * sigma ** 2 * np.log(6 * n / delta)
     T0 = int(np.ceil(
             min(
                 # theoretical complexity
-                17 * beta ** 2 * sigma ** 2 * np.log(6 * n / delta),
+                T0_original,
                 d
             )
     ).item())
@@ -72,7 +73,8 @@ def estimate_mu_hat(
             true_mu = atoms @ query
             first_order_error = np.sum(np.exp(beta * mu) * beta * (true_mu - mu))
             second_order_error = np.sum(np.exp(beta * mu) * beta**2 * (true_mu - mu)**2)
-            print(np.ones(n) * d)
+            print("Exact computation because T0 > d")
+            print("T0 was:", T0_original)
             print("first order error:", first_order_error)
             print("second order error:", second_order_error)
 

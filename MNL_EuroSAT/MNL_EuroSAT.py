@@ -7,6 +7,11 @@ import ssl
 import sys, os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'adaptive_softmax'))
 from adasoftmax import ada_softmax
+from hadamard_transform import hadamard_transform
+
+# TODO(@lukehan): Move constants to seperate file
+LINEAR_DIMENSION = 25600
+CONV_OUTPUT_CHANNEL = 64
 
 # TODO(@lukehan): Change indentation
 
@@ -74,9 +79,9 @@ def test_accuracy(test_loader, model, device):
 class EuroSATModel(torch.nn.Module):
   def __init__(self):
         super().__init__()
-        self.conv = torch.nn.Conv2d(3, 64, 3)
+        self.conv = torch.nn.Conv2d(3, CONV_OUTPUT_CHANNEL, 3)
         self.pool = torch.nn.MaxPool2d(3, stride=3)
-        self.linear = torch.nn.Linear(25600, 10, bias=False, dtype=torch.float)
+        self.linear = torch.nn.Linear(LINEAR_DIMENSION, 10, bias=False, dtype=torch.float)
         self.dropout = torch.nn.Dropout(0.25)
 
   def forward(self, x):
@@ -143,7 +148,7 @@ test_set_indices = np.nonzero(tmp)
 
 train_dataloader = DataLoader(Subset(EuroSAT, train_set_indices), batch_size=256, shuffle=True)
 base_model = EuroSATModel().to(device)
-train_base_model(train_dataloader, base_model, device, max_iter=2)
+train_base_model(train_dataloader, base_model, device, max_iter=12)
 
 base_model.eval()
 
@@ -170,13 +175,14 @@ gain_list = list()
 delta_list = list()
 error_list = list()
 
+use_hadamard_transform = False
 
 TEMP = 1
 N_CLASSES = 10
-NUM_EXPERIMENTS = 100
+NUM_EXPERIMENTS = 10
 
 
-for dimension in list(range(25600, 25600 + 1, 1000)):
+for dimension in list(range(LINEAR_DIMENSION, LINEAR_DIMENSION + 1, 1000)):
   print("dimension:", dimension)
   dimension_list.append(dimension)
   budget_list_aux = list()
@@ -194,6 +200,10 @@ for dimension in list(range(25600, 25600 + 1, 1000)):
   delta = 0.01
   top_k = 1
 
+  if use_hadamard_transform:
+      dPad = int(2 ** np.ceil(np.log2(dimension)))
+      D = np.diag(np.random.choice([-1, 1], size=dPad))
+
   for seed in range(NUM_EXPERIMENTS):
     print(seed)
     x, label = next(iter(test_set_flattened_loader))
@@ -209,16 +219,38 @@ for dimension in list(range(25600, 25600 + 1, 1000)):
     print("gain:", N_CLASSES * np.sum(np.exp(2 * (mu - np.max(mu)))) / (np.sum(np.exp(mu - np.max(mu)))**2))
     gain_sum += N_CLASSES * np.sum(np.exp(2 * (mu - np.max(mu)))) / (np.sum(np.exp(mu - np.max(mu)))**2)
 
+
     # AdaSoftmax
-    bandit_topk_indices, z_hat, bandit_budget = ada_softmax(A=A_ndarray,
-                                                            x=x_ndarray,
-                                                            epsilon=epsilon,
-                                                            delta=delta,
-                                                            samples_for_sigma=dimension,
-                                                            beta=TEMP,
-                                                            k=top_k,
-                                                            verbose=True
-                                                            )
+    if use_hadamard_transform:
+        Apad = np.pad(A_ndarray, ((0, 0), (0, dPad - dimension)), 'constant', constant_values=0)
+        xpad = np.pad(x_ndarray, (0, dPad - dimension), 'constant', constant_values=0)
+
+        # convert padded A and x to Tensor in order to use pytorch's hadamard transform library
+        A_pad_torch = torch.tensor(Apad)
+        x_pad_torch = torch.tensor(xpad)
+
+        Aprime= hadamard_transform(A_pad_torch @ D).numpy()
+        xprime= hadamard_transform(x_pad_torch @ D).numpy()
+
+        bandit_topk_indices, z_hat, bandit_budget = ada_softmax(A=Aprime,
+                                                                x=xprime,
+                                                                epsilon=epsilon,
+                                                                delta=delta,
+                                                                samples_for_sigma=dPad,
+                                                                beta=TEMP,
+                                                                k=top_k,
+                                                                verbose=True
+                                                                )
+    else:
+        bandit_topk_indices, z_hat, bandit_budget = ada_softmax(A=A_ndarray,
+                                                                x=x_ndarray,
+                                                                epsilon=epsilon,
+                                                                delta=delta,
+                                                                samples_for_sigma=dimension,
+                                                                beta=TEMP,
+                                                                k=top_k,
+                                                                verbose=True
+                                                                )
 
     # TODO(@lukehan): Change how we evaluate delta and epsilon(Like in the adaptive_softmax/test_script.py)
     cur_epsilon = np.abs(z_hat[bandit_topk_indices] - z[bandit_topk_indices]) / z[bandit_topk_indices]
