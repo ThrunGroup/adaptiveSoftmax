@@ -114,12 +114,28 @@ def estimate_mu_hat(
         true_mu = atoms @ query
         print("ratio:", np.sum(gamma_numer) ** 2 / (np.sum(alpha_numer)))
 
-        print("gamma:", gamma_numer / np.sum(gamma_numer))
-        print("alpha:", alpha_numer / np.sum(alpha_numer))
+        normalized_true_mu = true_mu - true_mu.max()
 
-        print("T1:", term1)
-        print("T2:", term2)
-        print("T3:", term3)
+        true_gamma_numer = np.exp((beta * normalized_true_mu) / 2)
+        true_gamma = true_gamma_numer / np.sum(true_gamma_numer)
+        gamma = gamma_numer / np.sum(gamma_numer)
+        gamma_error = (true_gamma - gamma) / true_gamma
+        print("true gamma:", true_gamma)
+        print("gamma:", gamma)
+        print("gamma error:", gamma_error)
+
+        true_alpha_numer = np.exp(beta * normalized_true_mu)
+        true_alpha = true_alpha_numer / np.sum(true_alpha_numer)
+        alpha = alpha_numer / np.sum(alpha_numer)
+        alpha_error = (true_alpha - alpha) / true_alpha
+        print("true alpha:", true_alpha)
+        print("alpha", alpha)
+        print("alpha error:", alpha_error)
+
+        print("T1:", term1 * beta ** 2 * sigma ** 2)
+        print("T2:", term2 * beta ** 2 * sigma ** 2)
+        print("T3:", term3 * beta ** 2 * sigma ** 2)
+        print("Sums:", n * term1, np.sum(term2), np.sum(term3))
         print("Sums:", n * term1, np.sum(term2), np.sum(term3))
 
         print("estimate n_i:", n_samples)
