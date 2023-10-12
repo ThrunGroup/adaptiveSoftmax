@@ -14,7 +14,7 @@ if __name__ == "__main__":
     torch.manual_seed(777)
     np.random.seed(777)
 
-    device = torch.devide('cuda:0') if torch.cuda.is_available else torch.device('cpu')
+    device = torch.device('cuda:0') if torch.cuda.is_available else torch.device('cpu')
 
     ssl._create_default_https_context = ssl._create_unverified_context
 
@@ -28,8 +28,8 @@ def train_base_model(dataloader, model, device, max_iter=10):
       avg_loss = 0
 
       for data, labels in dataloader:
-        data.to(device)
-        labels.to(device)
+        data = data.to(device)
+        labels = labels.to(device)
 
         optimizer.zero_grad()
 
@@ -76,8 +76,7 @@ class EuroSATModel(torch.nn.Module):
         super().__init__()
         self.conv = torch.nn.Conv2d(3, 64, 3)
         self.pool = torch.nn.MaxPool2d(3, stride=3)
-        self.linear1 = torch.nn.Linear(25600, 12800, dtype=torch.float)
-        self.linear2 = torch.nn.Linear(12800, 10, bias=False, dtype=torch.float)  # Probably too drastic?
+        self.linear = torch.nn.Linear(25600, 10, bias=False, dtype=torch.float)
         self.dropout = torch.nn.Dropout(0.25)
 
   def forward(self, x):
@@ -86,14 +85,7 @@ class EuroSATModel(torch.nn.Module):
       x = self.pool(x)
       x = self.dropout(x)
       x = torch.flatten(x, start_dim=1)
-      x = self.linear1(x)
-      x = torch.nn.functional.relu(x)
-      out = self.linear2(x)
-      return out
-
-  def matmul(self, x):
-      with torch.no_grad():
-          out = self.linear(x)
+      out = self.linear(x)
       return out
 
   # TODO(@lukehan): Might not need this. Test and remove.
@@ -105,11 +97,8 @@ class EuroSATModel(torch.nn.Module):
             x = self.conv(x)
             x = torch.nn.functional.relu(x)
             x = self.pool(x)
-            x = torch.flatten(x)
-            x = self.linear1(x)
-            x = torch.nn.functional.relu(x)
-            new_X.append(x)
-      return torch.stack(new_X).float()
+            out = torch.flatten(x)
+      return out
 
   def transform_single(self, x):
       #assume batch is given
@@ -117,10 +106,8 @@ class EuroSATModel(torch.nn.Module):
         x = self.conv(x)
         x = torch.nn.functional.relu(x)
         x = self.pool(x)
-        x = torch.flatten(x)
-        x = self.linear1(x)
-        x = torch.nn.functional.relu(x)
-      return x
+        out = torch.flatten(x)
+      return out
 
   def get_prob(self, x):
       with torch.no_grad():
@@ -128,7 +115,7 @@ class EuroSATModel(torch.nn.Module):
         return torch.nn.functional.softmax(x)
 
   def get_linear_weight(self):
-      return self.linear2.weight.detach()
+      return self.linear.weight.detach()
 
   def set_linear_weight(self, weight):
       self.linear.weight = torch.nn.parameter.Parameter(weight)
@@ -139,8 +126,8 @@ class TransformToLinear(object):
         self.model = model
         self.device = device
     def __call__(self, image):
-        image = self.model.transform_single(image)
         image = image.to(device)
+        image = self.model.transform_single(image)
 
         return image
 
@@ -156,13 +143,13 @@ test_set_indices = np.nonzero(tmp)
 
 train_dataloader = DataLoader(Subset(EuroSAT, train_set_indices), batch_size=256, shuffle=True)
 base_model = EuroSATModel().to(device)
-train_base_model(train_dataloader, base_model, max_iter=2)
+train_base_model(train_dataloader, base_model, device, max_iter=2)
 
 base_model.eval()
 
 
 test_dataloader = DataLoader(Subset(EuroSAT, test_set_indices[0]), batch_size=256, shuffle=False)
-print(test_accuracy(test_dataloader, base_model))
+print(test_accuracy(test_dataloader, base_model, device))
 
 flatten_transform = transforms.Compose([transforms.ToTensor(),
                                         TransformToLinear(base_model, device)])
@@ -209,8 +196,8 @@ for dimension in list(range(25600, 25600 + 1, 1000)):
 
   for seed in range(NUM_EXPERIMENTS):
     print(seed)
-    x, label = test_set_flattened_loader[seed]
-    x_ndarray = x[0].detach().numpy()
+    x, label = next(iter(test_set_flattened_loader))
+    x_ndarray = x[0].detach().cpu().numpy()
 
     # naive softmax
     mu = A_ndarray @ x_ndarray
