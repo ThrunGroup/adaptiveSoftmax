@@ -1,7 +1,11 @@
 import numpy as np
 from numba import njit
 from typing import Tuple, List, Any
-from constants import *
+from constants import (
+    BATCH_SIZE,
+    TOP_K,
+    BETA,
+)
 
 @njit
 def approx_sigma(
@@ -85,7 +89,7 @@ def estimate_mu_hat(
     alpha_numer = np.exp(normalized_exp)
     gamma_numer = np.exp(normalized_exp / 2)  # TODO (@lukehan): this is different from paper?
 
-    # Determine the number of total samples to use for each arm.
+    # Determine the number of total samples to use for each arm. 
     # This means we're taking an extra n_samples - T0 samples to update mu
     log_term = np.log((6 * n) / delta)
     term1 = 17 * log_term
@@ -225,15 +229,14 @@ def find_topk_arms(
     return best_ind[:k], mu_approx, d_used
 
 
-# TODO(@lukehan): ada_softmax should support collections of x.
-# TODO(@lukehan): algo should also support A and x being torch implementations for GPT2
+# adaSoftmax with warm start
 @njit
 def ada_softmax(
     A: np.ndarray,
     x: np.ndarray,
-    epsilon: float = DEFAULT_EPSILON,
-    delta: float = DEFAULT_DELTA,
-    samples_for_sigma: int = DEFAULT_SAMPLES_FOR_SIGMA,
+    epsilon: float,
+    delta: float,
+    samples_for_sigma: int,
     beta: float = BETA,
     k: int = TOP_K,
     verbose: bool = False,
@@ -259,13 +262,12 @@ def ada_softmax(
         print("sigma:", sigma)
 
     mu_hat, d_used = estimate_mu_hat(
-        atoms=A,
-        query=x,
-        epsilon=epsilon / 2,
-        delta=delta / 3,
-        sigma=sigma,
-        beta=beta)
-
+        atoms = A,
+        query = x,
+        epsilon = epsilon / 2,
+        delta = delta / 3,
+        sigma = sigma,
+        beta = beta)
     best_indices, updated_mu_hat, d_used_updated = find_topk_arms(
         atoms=A,
         query=x,
@@ -296,6 +298,7 @@ def ada_softmax(
     y_hat = np.exp(beta * (final_mu_hat))
     s_hat = np.sum(y_hat)
     budget = np.sum(d_used_updated).item()
+
 
     return best_indices, y_hat / s_hat, budget
 
