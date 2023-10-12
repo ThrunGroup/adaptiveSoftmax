@@ -5,7 +5,7 @@ import torch
 if __name__ == "__main__":
     np.random.seed(42)
 
-    NUM_TESTS = 100
+    NUM_TESTS = 1000
     verbose = True
 
     # constant for adjusting gain.
