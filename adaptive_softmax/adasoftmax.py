@@ -7,7 +7,7 @@ from constants import (
     BETA,
 )
 
-
+@njit
 def approx_sigma(
     A: np.ndarray,
     x: np.ndarray,
@@ -28,10 +28,9 @@ def approx_sigma(
     sigma = np.empty(n_arms)
     for i in range(n_arms):
         sigma[i] = np.std(elmul[i])
-    # TODO(@lukehan): Should x.shape[0] be removed here? => Need to check with Tavor
     return x.shape[0] * np.median(sigma)
 
-
+@njit
 def estimate_mu_hat(
     atoms: np.ndarray,
     query: np.ndarray,
@@ -132,7 +131,7 @@ def estimate_mu_hat(
 
     return updated_mu_hat, n_samples
 
-
+@njit
 def find_topk_arms(
     atoms: np.ndarray,
     query: np.ndarray,
@@ -232,7 +231,7 @@ def find_topk_arms(
 
 
 # adaSoftmax with warm start
-
+@njit
 def ada_softmax(
     A: np.ndarray,
     x: np.ndarray,

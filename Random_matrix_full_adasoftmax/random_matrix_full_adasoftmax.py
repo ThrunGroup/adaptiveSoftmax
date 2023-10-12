@@ -23,13 +23,13 @@ if __name__ == "__main__":
     delta = 0.01
     k = 1
 
-    N_EXPERIMENTS = 100
+    N_EXPERIMENTS = 10
 
     # for plotting
     dimension_list = list()
     budget_list = list()
 
-    for d in range(10000, 110000, 10000):
+    for d in range(100000, 110000, 10000):
         dimension_list.append(d)
 
         if verbose:
@@ -57,6 +57,7 @@ if __name__ == "__main__":
                 A[j] = A[j] / (A_norm[j] / 2.4)
 
             best_index = np.random.choice(10)
+            print(A[best_index])
 
             # TODO(@lukehan): normalize the gaussian noise -> scale to desired constant(1e-3, for example)
             #       also, add hyperparameter to control the scale of noise
