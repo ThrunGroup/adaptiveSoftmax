@@ -1,0 +1,7 @@
+# Constants for adaptive softmax
+BATCH_SIZE = 128
+TOP_K = 1
+BETA = 1.0
+DEFAULT_EPSILON = 0.1
+DEFAULT_DELTA = 0.01
+DEFAULT_SAMPLES_FOR_SIGMA = 100
