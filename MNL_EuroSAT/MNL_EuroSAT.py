@@ -14,9 +14,11 @@ if __name__ == "__main__":
     torch.manual_seed(777)
     np.random.seed(777)
 
+    device = torch.devide('cuda:0') if torch.cuda.is_available else torch.device('cpu')
+
     ssl._create_default_https_context = ssl._create_unverified_context
 
-def train_base_model(dataloader, model, max_iter=10):
+def train_base_model(dataloader, model, device, max_iter=10):
     model.train()
 
     criterion = torch.nn.CrossEntropyLoss()
@@ -26,6 +28,9 @@ def train_base_model(dataloader, model, max_iter=10):
       avg_loss = 0
 
       for data, labels in dataloader:
+        data.to(device)
+        labels.to(device)
+
         optimizer.zero_grad()
 
         output = model(data)
@@ -40,7 +45,7 @@ def train_base_model(dataloader, model, max_iter=10):
       print(f"epoch {epoch} => loss: {avg_loss}")
 
 
-def test_accuracy(test_loader, model):
+def test_accuracy(test_loader, model, device):
 
     model.eval()
     accuracy = 0.0
@@ -51,6 +56,10 @@ def test_accuracy(test_loader, model):
         for data in test_loader:
             n_batches += 1
             images, labels = data
+
+            images = images.to(device)
+            labels = labels.to(device)
+
             # run the model on the test set to predict labels
             prediction = model(images)
             # select the label with the highest logit
@@ -126,10 +135,14 @@ class EuroSATModel(torch.nn.Module):
 
 
 class TransformToLinear(object):
-    def __init__(self, model):
+    def __init__(self, model, device):
         self.model = model
-    def __call__(self, datum):
+        self.device = device
+    def __call__(self, image):
+        image = self.model.transform_single(image)
+        image = image.to(device)
 
+        return image
 
 
 EuroSAT = datasets.EuroSAT(root="./data/",
@@ -142,8 +155,8 @@ tmp[train_set_indices] = 0
 test_set_indices = np.nonzero(tmp)
 
 train_dataloader = DataLoader(Subset(EuroSAT, train_set_indices), batch_size=256, shuffle=True)
-base_model = EuroSATModel()
-train_base_model(train_dataloader, base_model, max_iter=10)
+base_model = EuroSATModel().to(device)
+train_base_model(train_dataloader, base_model, max_iter=2)
 
 base_model.eval()
 
@@ -152,7 +165,7 @@ test_dataloader = DataLoader(Subset(EuroSAT, test_set_indices[0]), batch_size=25
 print(test_accuracy(test_dataloader, base_model))
 
 flatten_transform = transforms.Compose([transforms.ToTensor(),
-                                        TransformToLinear(base_model)])
+                                        TransformToLinear(base_model, device)])
 EuroSAT_flattened = datasets.EuroSAT(root="./data/",
                                  download=True,
                                  transform=flatten_transform)
@@ -173,7 +186,7 @@ error_list = list()
 
 TEMP = 1
 N_CLASSES = 10
-NUM_EXPERIMENTS = 1000
+NUM_EXPERIMENTS = 100
 
 
 for dimension in list(range(25600, 25600 + 1, 1000)):
@@ -188,7 +201,7 @@ for dimension in list(range(25600, 25600 + 1, 1000)):
 
   # Extract linear layer's weight from tranied model
   A = base_model.get_linear_weight()
-  A_ndarray = A.detach().numpy()
+  A_ndarray = A.detach().cpu().numpy()
 
   epsilon = 0.1
   delta = 0.01
@@ -197,7 +210,7 @@ for dimension in list(range(25600, 25600 + 1, 1000)):
   for seed in range(NUM_EXPERIMENTS):
     print(seed)
     x, label = test_set_flattened_loader[seed]
-    x_ndarray = x.detach().numpy()
+    x_ndarray = x[0].detach().numpy()
 
     # naive softmax
     mu = A_ndarray @ x_ndarray
