@@ -10,7 +10,7 @@ from adasoftmax import ada_softmax, approx_sigma
 if __name__ == "__main__":
     np.random.seed(777)
     # flag variables
-    use_hadamard_transform = True
+    use_hadamard_transform = False
     verbose = True
     verbose_hadamard = False
 
@@ -23,13 +23,13 @@ if __name__ == "__main__":
     delta = 0.01
     k = 1
 
-    N_EXPERIMENTS = 10
+    N_EXPERIMENTS = 100
 
     # for plotting
     dimension_list = list()
     budget_list = list()
 
-    for d in range(30000, 40000, 10000):
+    for d in range(10000, 110000, 10000):
         dimension_list.append(d)
 
         if verbose:
@@ -105,6 +105,7 @@ if __name__ == "__main__":
                                                                    samples_for_sigma=d,
                                                                    beta=beta,
                                                                    k=k,
+                                                                   verbose=True
                                                                    )
 
             total_budget += bandit_budget

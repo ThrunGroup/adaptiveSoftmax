@@ -7,7 +7,7 @@ from constants import (
     BETA,
 )
 
-@njit
+
 def approx_sigma(
     A: np.ndarray,
     x: np.ndarray,
@@ -31,7 +31,7 @@ def approx_sigma(
     # TODO(@lukehan): Should x.shape[0] be removed here? => Need to check with Tavor
     return x.shape[0] * np.median(sigma)
 
-@njit
+
 def estimate_mu_hat(
     atoms: np.ndarray,
     query: np.ndarray,
@@ -95,7 +95,7 @@ def estimate_mu_hat(
     term1 = 17 * log_term
     term2 = 16 * (2 ** 0.5) * log_term * np.sum(gamma_numer) * gamma_numer / (epsilon * np.sum(alpha_numer))
     term3 = (16 * np.log(12 / delta)) * alpha_numer / ((epsilon ** 2) * np.sum(alpha_numer))
-    n_samples = np.maximum(term1, term2, term3).astype(np.int64)
+    n_samples = np.maximum(np.maximum(term1, term2), term3).astype(np.int64)
     n_samples = np.ceil(
         np.minimum(beta**2 * sigma**2 * n_samples, d)
     ).astype(np.int64)
@@ -113,14 +113,16 @@ def estimate_mu_hat(
         true_mu = atoms @ query
         print("ratio:", np.sum(gamma_numer) ** 2 / (np.sum(alpha_numer)))
 
+        print("gamma:", gamma_numer / np.sum(gamma_numer))
+        print("alpha:", alpha_numer / np.sum(alpha_numer))
+
         print("T1:", term1)
         print("T2:", term2)
         print("T3:", term3)
         print("Sums:", n * term1, np.sum(term2), np.sum(term3))
 
-        print("prior scaling:", n_samples)
-        print("estimate n_i:", beta**2 * sigma ** 2 * n_samples)
-        print("T:", np.sum(beta ** sigma ** 2 * n_samples))
+        print("estimate n_i:", n_samples)
+        print("second phase budget:", np.sum(n_samples))
 
         first_order_error = np.sum(np.exp(beta * updated_mu_hat) * (beta * (true_mu - updated_mu_hat)))
         second_order_error = np.sum(np.exp(updated_mu_hat) * (beta**2 * (true_mu - updated_mu_hat)**2))
@@ -130,7 +132,7 @@ def estimate_mu_hat(
 
     return updated_mu_hat, n_samples
 
-@njit
+
 def find_topk_arms(
     atoms: np.ndarray,
     query: np.ndarray,
@@ -230,7 +232,7 @@ def find_topk_arms(
 
 
 # adaSoftmax with warm start
-@njit
+
 def ada_softmax(
     A: np.ndarray,
     x: np.ndarray,
@@ -262,12 +264,14 @@ def ada_softmax(
         print("sigma:", sigma)
 
     mu_hat, d_used = estimate_mu_hat(
-        atoms = A,
-        query = x,
-        epsilon = epsilon / 2,
-        delta = delta / 3,
-        sigma = sigma,
-        beta = beta)
+        atoms=A,
+        query=x,
+        epsilon=epsilon / 2,
+        delta=delta / 3,
+        sigma=sigma,
+        beta=beta,
+        verbose=verbose,
+    )
     best_indices, updated_mu_hat, d_used_updated = find_topk_arms(
         atoms=A,
         query=x,
