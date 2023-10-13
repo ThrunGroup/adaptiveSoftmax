@@ -5,6 +5,9 @@ from constants import (
     BATCH_SIZE,
     TOP_K,
     BETA,
+    DEFAULT_EPSILON,
+    DEFAULT_DELTA,
+    DEFAULT_SAMPLES_FOR_SIGMA,
 )
 
 @njit
@@ -229,14 +232,13 @@ def find_topk_arms(
     return best_ind[:k], mu_approx, d_used
 
 
-# adaSoftmax with warm start
 @njit
 def ada_softmax(
     A: np.ndarray,
     x: np.ndarray,
-    epsilon: float,
-    delta: float,
-    samples_for_sigma: int,
+    epsilon: float = DEFAULT_EPSILON,
+    delta: float = DEFAULT_DELTA,
+    samples_for_sigma: int = DEFAULT_SAMPLES_FOR_SIGMA,
     beta: float = BETA,
     k: int = TOP_K,
     verbose: bool = False,
