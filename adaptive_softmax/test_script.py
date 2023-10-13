@@ -3,7 +3,7 @@ from adasoftmax import ada_softmax, estimate_mu_hat, find_topk_arms, approx_sigm
 import torch
 
 if __name__ == "__main__":
-    np.random.seed(42)
+    np.random.seed(50)
 
     NUM_TESTS = 1000
     verbose = True
@@ -37,9 +37,13 @@ if __name__ == "__main__":
 
     for i in range(NUM_TESTS):
         # generate ground truth mu randomly
+        """
         true_mu = np.ones(n)
         true_mu = np.random.uniform(1, 100, size=(n,))
-        true_mu /= 5
+        true_mu /= 10
+        """
+        true_mu = np.array([2.84174176, 0.21693943, 4.94935448, 8.54784365, 6.60296774, 0.25694716,
+                            0.1692839, 8.39057803, 8.22458089, 8.52506058])
 
         # find true top-k indices
         true_topk_indices_torch = torch.sort(torch.topk(torch.from_numpy(true_mu), k).indices).values
@@ -61,6 +65,7 @@ if __name__ == "__main__":
         # calculate true sigma
         sigma = approx_sigma(A, x, num_sigma_samples)
 
+
         # normalization constant estimation test
         mu_hat_norm, budget_vec_norm = estimate_mu_hat(atoms=A,
                                                        query=x,
@@ -69,7 +74,9 @@ if __name__ == "__main__":
                                                        sigma=sigma,
                                                        beta=beta,
                                                        )
-        S_hat = np.sum(np.exp(mu_hat_norm))
+        S_hat = np.sum(np.exp(beta * mu_hat_norm))
+        # print(np.exp(mu_hat_norm))
+        # print(np.exp(beta * true_mu))
         S_error = np.abs(S_hat - S) / S
         total_S_error += S_error
         # Refer to algorithm 2, Line 3 in original paper for epsilon bound on normalization constant estimation
@@ -117,6 +124,10 @@ if __name__ == "__main__":
             z_error = np.abs(z_hat[best_indices_hat] - z[true_topk_indices])
             empirical_epsilon = np.max(z_error / z[true_topk_indices])
             if empirical_epsilon > epsilon:
+                print("epsilon:", empirical_epsilon)
+                print(best_indices_hat, true_topk_indices)
+                print(z_hat[best_indices_hat], z[true_topk_indices])
+                print(A@x)
                 wrong_softmax_estimate_numbers += 1
             else:
                 total_softmax_error += empirical_epsilon

@@ -5,9 +5,11 @@ from constants import (
     BATCH_SIZE,
     TOP_K,
     BETA,
+    PROFILE,
+    OPTIMIZE_CONSTANTS,
 )
 
-@njit
+
 def approx_sigma(
     A: np.ndarray,
     x: np.ndarray,
@@ -25,12 +27,16 @@ def approx_sigma(
     """
     n_arms = A.shape[0]
     elmul = A[:, :num_samples] * x[:num_samples]
+
+    if PROFILE:
+        pass
+
     sigma = np.empty(n_arms)
     for i in range(n_arms):
         sigma[i] = np.std(elmul[i])
     return x.shape[0] * np.median(sigma)
 
-@njit
+
 def estimate_mu_hat(
     atoms: np.ndarray,
     query: np.ndarray,
@@ -54,9 +60,20 @@ def estimate_mu_hat(
 
     :returns: the approximation for mu_hat
     """
+
+    # TODO(@lukehan): Tune these constants, move to a better position for readability
+    c_empirical_t0 = 1
+    c_empirical_t2 = 1
+    c_empirical_t3 = 1
+
+    if OPTIMIZE_CONSTANTS:
+        c_empirical_t0 = 0.3
+        c_empirical_t2 = 1e-1
+        c_empirical_t3 = 1e-1
+
     n = atoms.shape[0]
     d = query.shape[0]
-    T0_original = 17 * beta ** 2 * sigma ** 2 * np.log(6 * n / delta)
+    T0_original = c_empirical_t0 * 17 * beta ** 2 * sigma ** 2 * np.log(6 * n / delta)
     T0 = int(np.ceil(
             min(
                 # theoretical complexity
@@ -93,9 +110,11 @@ def estimate_mu_hat(
     # Determine the number of total samples to use for each arm. 
     # This means we're taking an extra n_samples - T0 samples to update mu
     log_term = np.log((6 * n) / delta)
-    term1 = 17 * log_term
+    term1 = c_empirical_t0 * 17 * log_term
     term2 = 16 * (2 ** 0.5) * log_term * np.sum(gamma_numer) * gamma_numer / (epsilon * np.sum(alpha_numer))
+    term2 *= c_empirical_t2
     term3 = (16 * np.log(12 / delta)) * alpha_numer / ((epsilon ** 2) * np.sum(alpha_numer))
+    term3 *= c_empirical_t3
     n_samples = np.maximum(np.maximum(term1, term2), term3).astype(np.int64)
     n_samples = np.ceil(
         np.minimum(beta**2 * sigma**2 * n_samples, d)
@@ -110,9 +129,12 @@ def estimate_mu_hat(
             mu_approx = atoms[i, T0:n_samples[i]] @ query[T0:n_samples[i]] * d
             updated_mu_hat[i] = (mu_hat[i] * T0 + mu_approx) / max(n_samples[i], 1)
 
-    if verbose:
+    if PROFILE:
+        import torch
+
+        print("T0:", T0, T0_original)
+
         true_mu = atoms @ query
-        print("ratio:", np.sum(gamma_numer) ** 2 / (np.sum(alpha_numer)))
 
         normalized_true_mu = true_mu - true_mu.max()
 
@@ -120,23 +142,18 @@ def estimate_mu_hat(
         true_gamma = true_gamma_numer / np.sum(true_gamma_numer)
         gamma = gamma_numer / np.sum(gamma_numer)
         gamma_error = (true_gamma - gamma) / true_gamma
-        print("true gamma:", true_gamma)
-        print("gamma:", gamma)
-        print("gamma error:", gamma_error)
+        print("gamma error top2:", torch.topk(torch.from_numpy(gamma_error), 2).values)
 
         true_alpha_numer = np.exp(beta * normalized_true_mu)
         true_alpha = true_alpha_numer / np.sum(true_alpha_numer)
         alpha = alpha_numer / np.sum(alpha_numer)
         alpha_error = (true_alpha - alpha) / true_alpha
-        print("true alpha:", true_alpha)
-        print("alpha", alpha)
-        print("alpha error:", alpha_error)
+        print("alpha error:", torch.topk(torch.from_numpy(alpha_error), 2).values)
 
-        print("T1:", term1 * beta ** 2 * sigma ** 2)
-        print("T2:", term2 * beta ** 2 * sigma ** 2)
-        print("T3:", term3 * beta ** 2 * sigma ** 2)
-        print("Sums:", n * term1, np.sum(term2), np.sum(term3))
-        print("Sums:", n * term1, np.sum(term2), np.sum(term3))
+        print("T1:", np.ceil(term1 * beta ** 2 * sigma ** 2))
+        print("T2:", np.ceil(term2 * beta ** 2 * sigma ** 2))
+        print("T3:", np.ceil(term3 * beta ** 2 * sigma ** 2))
+        print("Sums:", n * term1 * beta ** 2 * sigma ** 2, np.sum(np.maximum(term2, d)) * beta ** 2 * sigma ** 2, np.sum(np.maximum(term3, d)) * beta ** 2 * sigma ** 2)
 
         print("estimate n_i:", n_samples)
         print("second phase budget:", np.sum(n_samples))
@@ -149,7 +166,7 @@ def estimate_mu_hat(
 
     return updated_mu_hat, n_samples
 
-@njit
+
 def find_topk_arms(
     atoms: np.ndarray,
     query: np.ndarray,
@@ -233,7 +250,7 @@ def find_topk_arms(
         for i, atom_index in enumerate(surviving_arms):
             used = d_used[atom_index]
             if used < dim:
-                curr_mu[i] += atoms[atom_index, used:] @ query[used:] * dim
+                curr_mu[atom_index] += atoms[atom_index, used:] @ query[used:] * dim
 
         d_used[surviving_arms] = dim
         mu_approx = curr_mu / d_used  # to maintain consistent naming
@@ -249,7 +266,7 @@ def find_topk_arms(
 
 
 # adaSoftmax with warm start
-@njit
+
 def ada_softmax(
     A: np.ndarray,
     x: np.ndarray,
@@ -289,6 +306,10 @@ def ada_softmax(
         beta=beta,
         verbose=verbose,
     )
+
+    if PROFILE:
+        print("denominator budget:", d_used)
+
     best_indices, updated_mu_hat, d_used_updated = find_topk_arms(
         atoms=A,
         query=x,
@@ -299,6 +320,10 @@ def ada_softmax(
         batch_size=BATCH_SIZE,
         k=k,
     )
+
+    if PROFILE:
+        print("denominator + best_arm budget:", d_used_updated)
+        print("Is best-arm correct?", best_indices.item() == np.argmax(A @ x))
 
     # Total samples to use for better approximation of the mu of the top k arms.
     # This means we sample n_arm_pull - used_samples more times.
@@ -319,6 +344,17 @@ def ada_softmax(
     y_hat = np.exp(beta * (final_mu_hat))
     s_hat = np.sum(y_hat)
     budget = np.sum(d_used_updated).item()
+
+    if PROFILE:
+        true_mu = A@x
+        S = np.sum(np.exp(true_mu - updated_mu_hat.max()))
+        S_error = (S - s_hat) / S
+        print("S_error:", S_error)
+        numer_ground_truth = np.exp(true_mu - updated_mu_hat.max())[best_indices.item()]
+        numer_diff = y_hat[best_indices.item()]- numer_ground_truth
+        numer_error = numer_diff / numer_ground_truth
+        print("numerator error:", numer_error)
+        print("final budget:", budget)
 
 
     return best_indices, y_hat / s_hat, budget
