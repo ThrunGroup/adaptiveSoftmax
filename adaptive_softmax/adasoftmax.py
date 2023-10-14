@@ -16,7 +16,8 @@ from constants import (
 def approx_sigma(
     A: np.ndarray,
     x: np.ndarray,
-    num_samples: int
+    num_samples: int,
+    beta: float,
 ) -> float:
     """
     Function to approximate sigma more rigorously. We return the median of the std for the estimation
@@ -29,7 +30,7 @@ def approx_sigma(
     :returns: the sigma approximation
     """
     n_arms = A.shape[0]
-    elmul = A[:, :num_samples] * x[:num_samples]
+    elmul = beta * A[:, :num_samples] * x[:num_samples]
 
     if PROFILE:
         pass
@@ -97,6 +98,9 @@ def estimate_mu_hat(
             print("T0 was:", T0_original)
             print("first order error:", first_order_error)
             print("second order error:", second_order_error)
+
+        if PROFILE:
+            return mu, d * np.ones(n).astype(np.int64), dict()
 
         return mu, d * np.ones(n).astype(np.int64)
 
@@ -245,7 +249,7 @@ def find_topk_arms(
             surviving_arms = np.nonzero(mask)[0]
 
         compute_exactly = np.max(d_used[surviving_arms]) > (dim - batch_size)
-        if compute_exactly or num_found >= k:
+        if num_found >= k or compute_exactly:
             # NOTE: we're not using the terminated variable
             terminated = True
             break
@@ -264,16 +268,24 @@ def find_topk_arms(
         d_used[mask] += batch_size
 
     # Brute force computation for the remaining candidates
-    if compute_exactly:
+    if compute_exactly and num_found < k:
+        print("compute exactly")
+        print(d_used)
+        print(surviving_arms)
         curr_mu = d_used * mu_approx
         for i, atom_index in enumerate(surviving_arms):
             used = d_used[atom_index]
             if used < dim:
-                curr_mu[atom_index] += atoms[atom_index, used:] @ query[used:] * dim
+                curr_mu[atom_index] += (atoms[atom_index, used:] @ query[used:]) * dim
+                d_used[atom_index] = dim
 
-        d_used[surviving_arms] = dim
         mu_approx = curr_mu / d_used  # to maintain consistent naming
         mu_exact_search = curr_mu.copy()
+
+        """
+        mu_approx = atoms@query
+        mu_exact_search = mu_approx.copy()
+        """
 
         while num_found < k:
             best_index = np.argmax(mu_exact_search)
@@ -312,9 +324,11 @@ def ada_softmax(
 
     :return: top-k indices, estimation of softmax value across all indices, and total number of sampled used.
     """
-    sigma = approx_sigma(A, x, samples_for_sigma)
+    sigma = approx_sigma(A, x, samples_for_sigma, beta)
     if verbose:
         print("sigma:", sigma)
+
+    # print("sigma:", sigma)
 
     if PROFILE:
         mu_hat, d_used, profiling_results = estimate_mu_hat(
@@ -377,20 +391,29 @@ def ada_softmax(
     d_used_updated[best_indices] = np.maximum(d_used_updated[best_indices], n_arm_pull)
 
     # Using logsumexp trick for numerical stability
-    final_mu_hat = updated_mu_hat - np.max(updated_mu_hat)
-    y_hat = np.exp(beta * (final_mu_hat))
+    final_mu_hat = beta * updated_mu_hat
+    final_mu_hat_normalized = final_mu_hat - final_mu_hat.max()
+    y_hat = np.exp(final_mu_hat_normalized)
     s_hat = np.sum(y_hat)
     budget = np.sum(d_used_updated).item()
 
     if PROFILE:
-        true_mu = A@x
-        S = np.sum(np.exp(true_mu - mu_hat.max()))
-        S_hat = np.sum(np.exp(mu_hat - mu_hat.max()))
+        print("beta:", beta)
+        true_mu = beta * A@x
+        print("sanity check", true_mu == beta * mu_hat)
+        print("sanity check", true_mu == final_mu_hat)
+        mu_hat_beta = beta * mu_hat
+        S = np.sum(np.exp(true_mu - mu_hat_beta.max()))
+        S_hat = np.sum(np.exp(mu_hat_beta - mu_hat_beta.max()))
+        print("S_exp:", np.exp(true_mu - mu_hat_beta.max()))
+        print("S_hat_exp:", np.exp(mu_hat_beta - mu_hat_beta.max()))
         S_error = (S - S_hat) / S
         profiling_results["denominator error"] = S_error
         # print("S_error:", S_error)
-        numer_ground_truth = np.exp(true_mu - updated_mu_hat.max())[best_indices.item()]
+        numer_ground_truth = np.exp(true_mu - final_mu_hat.max())[best_indices.item()]
         numer_diff = y_hat[best_indices.item()] - numer_ground_truth
+        print("numerator estimate:", y_hat[best_indices.item()])
+        print("numerator ground truth:", numer_ground_truth)
         numer_error = numer_diff / numer_ground_truth
         profiling_results["numerator error"] = numer_error
         # print("numerator error:", numer_error)
