@@ -14,11 +14,13 @@ from adasoftmax import ada_softmax
 from gpt_constants import (
     MULTIPLICATIVE_ERROR,
     DELTA_ERROR,
+    WIKITEXT_BETA,
 )
 
+
 def load_from_datasets(
-        dataset_name: str = "wikitext",
-        num_samples: int = None,
+    dataset_name: str = "wikitext",
+    num_samples: int = None,
 ):
     """
     Given dataset_name, load the dataset with the correct number of samples
@@ -58,6 +60,32 @@ def check_correctness(
         print(f"=> delta error is {not_within / num_exp} for epsilon = {MULTIPLICATIVE_ERROR}" )
 
     return (not_within / num_exp) < DELTA_ERROR
+
+
+def get_gains(
+    true_mu: np.ndarray,
+    naive_budget: int,
+    adaptive_budget: int,
+    verbose: bool = False,
+) -> float:
+    """
+    Given both naive and adaptive budget, find the proportional gains.
+    :param true_mu: used to get the upper bound on gain (this is a loose proxy)
+    :param naive_budget: the naive budget
+    :param adaptive_budget: the adaptive budget
+    :param verbose: whether you print theoretical gain
+    """
+    empirical_gain = naive_budget / adaptive_budget
+    if verbose:
+        n_classes = true_mu.shape[0]
+        l2 = np.sum(np.exp(2 * (true_mu - np.max(true_mu))))
+        l1 = np.sum(np.exp(true_mu - np.max(true_mu))) ** 2
+        theoretical_gain = n_classes * l2 / l1
+
+        print("=> Theoretical gain: ", theoretical_gain)
+        print("=> Empirical gain: ", empirical_gain)
+
+    return empirical_gain
 
 
 def get_adaptive_forward(model) -> Callable:
@@ -104,17 +132,25 @@ def get_adaptive_forward(model) -> Callable:
         )
         # converting (batch, sequence, embed) -> (batch x sequence, embed)
         hidden_states = transformer_outputs[0]
-        flattened_states = hidden_states.view(-1, hidden_states.size(-1))
+        flattened_states = hidden_states.view(-1, hidden_states.size(-1))   # TODO: currently only supports batch = 1
+
         A = model.lm_head.weight.data.numpy()   # size = (embed, vocab_size)
-        _, z, _ = ada_softmax(A=A, x=flattened_states[-1].numpy(), samples_for_sigma=flattened_states.shape[0])
+        x = flattened_states[-1].numpy()
+        _, z, adaptive_budget = ada_softmax(
+            A=A,
+            x=x,
+            samples_for_sigma=flattened_states.shape[0],
+            beta=WIKITEXT_BETA,   # mu is very spiky
+        )
         likelihood = torch.tensor(z)
-        return likelihood
+
+        return likelihood, adaptive_budget
 
     return adaptive_forward
 
 
 def run_experiment(
-    exp_type: str = "gains",
+    exp_type: str = "both",
     dataset_name: str = "wikitext",
     num_samples: int = None,
     model_id: str = "gpt2",
@@ -127,16 +163,18 @@ def run_experiment(
     :param num_samples: the number of samples for the dataset
     :param model_id: the model id of the gpt2 series to run experiment on
     """
+    # TODO: currently only works on batch_size = 1
     # TODO: why is device on cpu even on the cluster??
     device = "cuda" if torch.cuda.is_available() else "cpu"
     tokenizer = GPT2TokenizerFast.from_pretrained(model_id)
     naive_model = GPT2LMHeadModel.from_pretrained(model_id).to(device)
+    naive_shape = naive_model.lm_head.weight.shape  # tensor with 2 elems
 
     # replace the forward function with the adaptive forward
     adaptive_model = deepcopy(naive_model)
     adaptive_model.forward = get_adaptive_forward(naive_model)
 
-    test = load_from_datasets("wikitext", num_samples)
+    test = load_from_datasets(dataset_name, num_samples)
     encodings = tokenizer("\n\n".join(test["text"]), return_tensors="pt")
     max_length = naive_model.config.n_positions
     seq_len = encodings.input_ids.size(1)
@@ -155,26 +193,25 @@ def run_experiment(
             naive_logits = naive_model(input_ids, labels=None, return_dict=False)[0]
             flattened_naive_logits = naive_logits.view(-1, naive_logits.size(-1))
             naive_ll = F.softmax(flattened_naive_logits, dim=1)[-1, target_id]  # TODO: should be (batch_size, 1)
-            adaptive_ll = adaptive_model(input_ids, labels=None)[target_id]
+            naive_budget = naive_shape[0] * naive_shape[1]
+
+            adaptive_ll, adaptive_budget = adaptive_model(input_ids, labels=None)
 
         # CELoss averages the losses. But, we're only comparing likelihood
         naive_lls.append(naive_ll)
-        adaptive_lls.append(adaptive_ll)
+        adaptive_lls.append(adaptive_ll[target_id])
 
         if end_loc == seq_len:
             break
 
-    is_correct, gains = None, None
+    is_correct, gain = None, None
     if exp_type == "both" or exp_type == "correctness":
         is_correct = check_correctness(naive_lls, adaptive_lls, verbose=True)
     if exp_type == "both" or exp_type == "gains":
-        gains = get_gains()
+        gain = get_gains(flattened_naive_logits.numpy(), naive_budget, adaptive_budget, verbose=True)
 
-
-
-def get_gains():
-
+    print(f"==> Experiment {exp_type} is {is_correct} with gain {gain}")
 
 
 if __name__ == "__main__":
-    run_experiment()
+    run_experiment(num_samples=100)
