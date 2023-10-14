@@ -1,0 +1,107 @@
+dimension: 1000
+=>average normalization constant estimation budget: 8264.8
+=>average budget spent until best-arm identification: 8264.8
+=>average budget: 8264.8
+
+
+=>delta: 0.0
+=>average error: 0.0005461236401979319
+
+
+
+dimension: 2000
+=>average normalization constant estimation budget: 9144.2
+=>average budget spent until best-arm identification: 9144.2
+=>average budget: 9144.2
+
+
+=>delta: 0.0
+=>average error: 0.0007423331092718619
+
+
+
+dimension: 3000
+=>average normalization constant estimation budget: 10234.2
+=>average budget spent until best-arm identification: 10234.2
+=>average budget: 10234.2
+
+
+=>delta: 0.0
+=>average error: 0.0005187206363902913
+
+
+
+dimension: 4000
+=>average normalization constant estimation budget: 11178.4
+=>average budget spent until best-arm identification: 11178.4
+=>average budget: 11178.4
+
+
+=>delta: 0.0
+=>average error: 0.0016878671264662522
+
+
+
+dimension: 5000
+=>average normalization constant estimation budget: 12171.2
+=>average budget spent until best-arm identification: 12171.2
+=>average budget: 12171.2
+
+
+=>delta: 0.0
+=>average error: 0.0008706428804414662
+
+
+
+dimension: 6000
+=>average normalization constant estimation budget: 13171.2
+=>average budget spent until best-arm identification: 13171.2
+=>average budget: 13171.2
+
+
+=>delta: 0.0
+=>average error: 0.0017977242003225581
+
+
+
+dimension: 7000
+=>average normalization constant estimation budget: 14223.4
+=>average budget spent until best-arm identification: 14223.4
+=>average budget: 14223.4
+
+
+=>delta: 0.0
+=>average error: 0.0017496633251176126
+
+
+
+dimension: 8000
+=>average normalization constant estimation budget: 15216.2
+=>average budget spent until best-arm identification: 15216.2
+=>average budget: 15216.2
+
+
+=>delta: 0.0
+=>average error: 0.0016214476744463358
+
+
+
+dimension: 9000
+=>average normalization constant estimation budget: 15969.0
+=>average budget spent until best-arm identification: 15969.0
+=>average budget: 16212.6
+
+
+=>delta: 0.0
+=>average error: 0.0006046336356423847
+
+
+
+dimension: 10000
+=>average normalization constant estimation budget: 15991.0
+=>average budget spent until best-arm identification: 15991.0
+=>average budget: 17228.2
+
+
+=>delta: 0.0
+=>average error: 0.0015098499859570382

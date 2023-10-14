@@ -3,7 +3,7 @@ from adasoftmax import ada_softmax, estimate_mu_hat, find_topk_arms, approx_sigm
 import torch
 
 if __name__ == "__main__":
-    np.random.seed(50)
+    np.random.seed(42)
 
     NUM_TESTS = 1000
     verbose = True
@@ -12,7 +12,7 @@ if __name__ == "__main__":
     c = 5
     # matrix, vector size
     n = 10
-    d = int(3e+5)
+    d = int(3e+4)
 
     # adaptive algorithm hyperparameters
     beta = 1
@@ -67,7 +67,7 @@ if __name__ == "__main__":
 
 
         # normalization constant estimation test
-        mu_hat_norm, budget_vec_norm = estimate_mu_hat(atoms=A,
+        mu_hat_norm, budget_vec_norm, profiling_results = estimate_mu_hat(atoms=A,
                                                        query=x,
                                                        epsilon=epsilon/2,
                                                        delta=delta/3,

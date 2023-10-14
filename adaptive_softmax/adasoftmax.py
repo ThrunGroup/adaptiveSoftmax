@@ -7,6 +7,9 @@ from constants import (
     BETA,
     PROFILE,
     OPTIMIZE_CONSTANTS,
+    RETURN_STAGE_BUDGETS,
+    DEFAULT_EPSILON,
+    DEFAULT_DELTA
 )
 
 
@@ -67,9 +70,9 @@ def estimate_mu_hat(
     c_empirical_t3 = 1
 
     if OPTIMIZE_CONSTANTS:
-        c_empirical_t0 = 0.3
-        c_empirical_t2 = 1e-1
-        c_empirical_t3 = 1e-1
+        c_empirical_t0 = 0.15
+        c_empirical_t2 = 4e-2
+        c_empirical_t3 = 1e-3
 
     n = atoms.shape[0]
     d = query.shape[0]
@@ -132,7 +135,7 @@ def estimate_mu_hat(
     if PROFILE:
         import torch
 
-        print("T0:", T0, T0_original)
+        # print("T0:", T0, T0_original)
 
         true_mu = atoms @ query
 
@@ -141,30 +144,46 @@ def estimate_mu_hat(
         true_gamma_numer = np.exp((beta * normalized_true_mu) / 2)
         true_gamma = true_gamma_numer / np.sum(true_gamma_numer)
         gamma = gamma_numer / np.sum(gamma_numer)
-        gamma_error = (true_gamma - gamma) / true_gamma
-        print("gamma error top2:", torch.topk(torch.from_numpy(gamma_error), 2).values)
+        gamma_error = gamma / true_gamma
+        # print("gamma error top2:", torch.topk(torch.from_numpy(gamma_error), 2).values)
 
         true_alpha_numer = np.exp(beta * normalized_true_mu)
         true_alpha = true_alpha_numer / np.sum(true_alpha_numer)
         alpha = alpha_numer / np.sum(alpha_numer)
-        alpha_error = (true_alpha - alpha) / true_alpha
-        print("alpha error:", torch.topk(torch.from_numpy(alpha_error), 2).values)
+        alpha_error = alpha / true_alpha
+        # print("alpha error top2:", torch.topk(torch.from_numpy(alpha_error), 2).values)
 
-        print("T1:", np.ceil(term1 * beta ** 2 * sigma ** 2))
-        print("T2:", np.ceil(term2 * beta ** 2 * sigma ** 2))
-        print("T3:", np.ceil(term3 * beta ** 2 * sigma ** 2))
-        print("Sums:", n * term1 * beta ** 2 * sigma ** 2, np.sum(np.maximum(term2, d)) * beta ** 2 * sigma ** 2, np.sum(np.maximum(term3, d)) * beta ** 2 * sigma ** 2)
+        # print("T1:", np.ceil(term1 * beta ** 2 * sigma ** 2))
+        # print("T2:", np.ceil(term2 * beta ** 2 * sigma ** 2))
+        # print("T3:", np.ceil(term3 * beta ** 2 * sigma ** 2))
+        # print("Sums:", n * term1 * beta ** 2 * sigma ** 2, np.sum(np.minimum(term2, d)) * beta ** 2 * sigma ** 2, np.sum(np.minimum(term3, d)) * beta ** 2 * sigma ** 2)
 
-        print("estimate n_i:", n_samples)
-        print("second phase budget:", np.sum(n_samples))
+        # print("estimate n_i:", n_samples)
+        # print("second phase budget:", np.sum(n_samples))
 
         first_order_error = np.sum(np.exp(beta * updated_mu_hat) * (beta * (true_mu - updated_mu_hat)))
         second_order_error = np.sum(np.exp(updated_mu_hat) * (beta**2 * (true_mu - updated_mu_hat)**2))
-        print("first order error:", first_order_error / np.sum(np.exp(beta * true_mu)))
-        print("second order error:", second_order_error / np.sum(np.exp(beta * true_mu)))
-        print(updated_mu_hat - true_mu)
+        # print("first order error:", first_order_error / np.sum(np.exp(beta * true_mu)))
+        # print("second order error:", second_order_error / np.sum(np.exp(beta * true_mu)))
+        # print(updated_mu_hat - true_mu)
 
-    return updated_mu_hat, n_samples
+        profiling_results = dict()
+        profiling_results["gamma_error"] = torch.topk(torch.from_numpy(gamma_error), 2).values
+        profiling_results["alpha_error"] = -1 * torch.topk(torch.from_numpy(-1 * alpha_error), 2).values
+        profiling_results["T0"] = T0
+        profiling_results["top-2 T2"] = torch.topk(torch.from_numpy(np.ceil(term2 * beta ** 2 * sigma ** 2)), 2).values.detach().numpy()
+        profiling_results["top-2 T3"] = torch.topk(torch.from_numpy(np.ceil(term3 * beta ** 2 * sigma ** 2)), 2).values.detach().numpy()
+        profiling_results["first_order_error"] = first_order_error / np.sum(np.exp(beta * true_mu))
+        profiling_results["second_order_error"] = second_order_error / np.sum(np.exp(beta * true_mu))
+
+        S = np.sum(np.exp(true_mu - updated_mu_hat.max()))
+        # s_hat =
+        # S_error = (S - s_hat) / S
+
+    if PROFILE:
+        return updated_mu_hat, n_samples, profiling_results
+    else:
+        return updated_mu_hat, n_samples
 
 
 def find_topk_arms(
@@ -270,9 +289,9 @@ def find_topk_arms(
 def ada_softmax(
     A: np.ndarray,
     x: np.ndarray,
-    epsilon: float,
-    delta: float,
     samples_for_sigma: int,
+    epsilon: float = DEFAULT_EPSILON,
+    delta: float = DEFAULT_DELTA,
     beta: float = BETA,
     k: int = TOP_K,
     verbose: bool = False,
@@ -297,18 +316,34 @@ def ada_softmax(
     if verbose:
         print("sigma:", sigma)
 
-    mu_hat, d_used = estimate_mu_hat(
-        atoms=A,
-        query=x,
-        epsilon=epsilon / 2,
-        delta=delta / 3,
-        sigma=sigma,
-        beta=beta,
-        verbose=verbose,
-    )
+    if PROFILE:
+        mu_hat, d_used, profiling_results = estimate_mu_hat(
+            atoms=A,
+            query=x,
+            epsilon=epsilon / 2,
+            delta=delta / 3,
+            sigma=sigma,
+            beta=beta,
+            verbose=verbose,
+        )
+    else:
+        mu_hat, d_used = estimate_mu_hat(
+            atoms=A,
+            query=x,
+            epsilon=epsilon / 2,
+            delta=delta / 3,
+            sigma=sigma,
+            beta=beta,
+            verbose=verbose,
+        )
 
     if PROFILE:
-        print("denominator budget:", d_used)
+        profiling_results["sigma"] = sigma
+        profiling_results["denom budget"] = np.sum(d_used).item()
+
+    if RETURN_STAGE_BUDGETS:
+        stage_budgets = dict()
+        stage_budgets["denom budget"] = np.sum(d_used).item()
 
     best_indices, updated_mu_hat, d_used_updated = find_topk_arms(
         atoms=A,
@@ -321,9 +356,11 @@ def ada_softmax(
         k=k,
     )
 
+    if RETURN_STAGE_BUDGETS:
+        stage_budgets["denom+best-arm budget"] = np.sum(d_used_updated).item()
+
     if PROFILE:
-        print("denominator + best_arm budget:", d_used_updated)
-        print("Is best-arm correct?", best_indices.item() == np.argmax(A @ x))
+        profiling_results["denom+best-arm budget"] = np.sum(d_used_updated).item()
 
     # Total samples to use for better approximation of the mu of the top k arms.
     # This means we sample n_arm_pull - used_samples more times.
@@ -347,17 +384,26 @@ def ada_softmax(
 
     if PROFILE:
         true_mu = A@x
-        S = np.sum(np.exp(true_mu - updated_mu_hat.max()))
-        S_error = (S - s_hat) / S
-        print("S_error:", S_error)
+        S = np.sum(np.exp(true_mu - mu_hat.max()))
+        S_hat = np.sum(np.exp(mu_hat - mu_hat.max()))
+        S_error = (S - S_hat) / S
+        profiling_results["denominator error"] = S_error
+        # print("S_error:", S_error)
         numer_ground_truth = np.exp(true_mu - updated_mu_hat.max())[best_indices.item()]
-        numer_diff = y_hat[best_indices.item()]- numer_ground_truth
+        numer_diff = y_hat[best_indices.item()] - numer_ground_truth
         numer_error = numer_diff / numer_ground_truth
-        print("numerator error:", numer_error)
-        print("final budget:", budget)
+        profiling_results["numerator error"] = numer_error
+        # print("numerator error:", numer_error)
+        profiling_results["final_budget"] = budget
 
-
-    return best_indices, y_hat / s_hat, budget
+    # print(d_used_updated)
+    # TODO: Remove last two return values
+    if PROFILE:
+        return best_indices, y_hat / s_hat, budget, profiling_results
+    elif RETURN_STAGE_BUDGETS:
+        return best_indices, y_hat / s_hat, budget, stage_budgets
+    else:
+        return best_indices, y_hat / s_hat, budget
 
 
 if __name__ == "__main__":
