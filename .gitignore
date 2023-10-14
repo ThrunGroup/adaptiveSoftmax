@@ -8,3 +8,8 @@ __pycache__/
 *.pt
 *.pyc
 input.txt
+*.png
+*.svg
+data/
+MNL_EuroSAT/data/
+MNL_MNIST/MNIST_data/

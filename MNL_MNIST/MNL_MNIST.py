@@ -8,52 +8,72 @@ import sys, os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'adaptive_softmax'))
 from adasoftmax import ada_softmax, approx_sigma
 from hadamard_transform import hadamard_transform
-from MNIST_constants import CONV_OUTPUT_CHANNEL, LINEAR_DIMENSION, TEMP
-from constants import PROFILE
-
-# TODO(@lukehan): Move constants to seperate file
+from MNIST_constants import TEMP, EPSILON, DELTA, NUM_EXPERIMENTS, USE_HADAMARD_TRANSFORM, TOP_K
 
 
 if __name__ == "__main__":
     torch.manual_seed(777)
     np.random.seed(777)
-
     device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
 
+    # Code to enable data download
     ssl._create_default_https_context = ssl._create_unverified_context
 
-def train_base_model(dataloader, model, device, max_iter=10):
+def train_base_model(
+    dataloader: torch.utils.data.DataLoader,
+    model: torch.nn.Module,
+    device: torch.device,
+    max_iter: int = 10,
+    verbose: bool = False,
+) -> None:
+    """
+    Trains the model with the training data given by the dataloader.
+
+    :param dataloader: Pytorch dataloader for training data
+    :param model: MNL model to train
+    :param device: Device to train model on
+    :param max_iter: Training iteration
+    :param verbose: Indicator for verbosity
+    :return: None
+    """
     model.train()
 
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters())
 
     for epoch in range(max_iter):
-      avg_loss = 0
+        avg_loss = 0
+        for data, labels in dataloader:
+            data = data.to(device)
+            labels = labels.to(device)
 
-      for data, labels in dataloader:
-        data = data.to(device)
-        labels = labels.to(device)
+            optimizer.zero_grad()
 
-        optimizer.zero_grad()
+            output = model(data)
+            loss = criterion(output, labels)
+            loss.backward()
+            optimizer.step()
 
-        output = model(data)
-        loss = criterion(output, labels)
-        loss.backward()
-        optimizer.step()
+            avg_loss += loss / 256
 
-        # print(loss)
-
-        avg_loss += loss / 256
-
-      # print(f"epoch {epoch} => loss: {avg_loss}")
+        if verbose:
+            print(f"epoch {epoch} => loss: {avg_loss}")
 
 
-def test_accuracy(test_loader, model, device):
-
+def test_accuracy(
+    test_loader: torch.utils.data.DataLoader,
+    model: torch.nn.Module,
+    device: torch.device,
+) -> float:
+    """
+    Test the model's accuracy with the given test data
+    :param test_loader: Pytorch Dataloader for test data
+    :param model: Model to test the accuracy
+    :param device: Device to run the model on
+    :return: accuracy of the given model on the given test data
+    """
     model.eval()
     accuracy = 0.0
-    total = 0.0
     n_batches = 0
 
     with torch.no_grad():
@@ -64,57 +84,56 @@ def test_accuracy(test_loader, model, device):
             images = images.to(device)
             labels = labels.to(device)
 
-            # run the model on the test set to predict labels
             prediction = model(images)
-            # select the label with the highest logit
             correct_prediction = torch.argmax(prediction, 1) == labels
             accuracy += correct_prediction.float().mean()
 
-    # compute the accuracy over all test images
     accuracy = (100 * accuracy / n_batches)
     return accuracy
 
 
 class BaseModel(torch.nn.Module):
-  def __init__(self, num_output_channel):
+    def __init__(self, num_output_channel):
         super().__init__()
-
         self.conv = torch.nn.Conv2d(1, num_output_channel, 3)
         self.pool = torch.nn.MaxPool2d(2, stride=2)
         self.linear = torch.nn.Linear(13*13*num_output_channel, 10, bias=False, dtype=torch.float)
         self.dropout = torch.nn.Dropout(0.25)
 
-  def forward(self, x):
-      x = self.conv(x)
-      x = torch.nn.functional.relu(x)
-      x = self.pool(x)
-      x = self.dropout(x)
-      x = torch.flatten(x, start_dim=1)
-      out = self.linear(x)
-      return out
-
-  def transform_single(self, x):
-      #assume batch is given
-      with torch.no_grad():
+    def forward(self, x):
         x = self.conv(x)
         x = torch.nn.functional.relu(x)
         x = self.pool(x)
-        out = torch.flatten(x)
-      return out
+        x = self.dropout(x)
+        x = torch.flatten(x, start_dim=1)
+        out = self.linear(x)
+        return out
 
-  def get_prob(self, x):
-      with torch.no_grad():
-        x = self.forward(x)
-        return torch.nn.functional.softmax(x)
+    def transform_single(self, x):
+        """
+        Transforms the given raw data in a flattened 1D vector form.
+        This passes the raw image through the forward pass of the model until the linear layer so that
+        when the resulting transformed vector x' is multiplied with A, it's equivalent of passing x through
+        the model.
+        :param x: raw data
+        :return: transformed 1D vector
+        """
+        with torch.no_grad():
+            x = self.conv(x)
+            x = torch.nn.functional.relu(x)
+            x = self.pool(x)
+            out = torch.flatten(x)
+        return out
 
-  def get_linear_weight(self):
-      return self.linear.weight.detach()
-
-  def set_linear_weight(self, weight):
-      self.linear.weight = torch.nn.parameter.Parameter(weight)
+    def get_linear_weight(self):
+        return self.linear.weight.detach()
 
 
 class TransformToLinear(object):
+    """
+    Pytorch Transform to transform raw data x to flattened 1D vector x'
+    so that calculating A@x' is equivalent to passing x through the forward pass of the model.
+    """
     def __init__(self, model, device):
         self.model = model
         self.device = device
@@ -141,10 +160,8 @@ train_dataloader = DataLoader(MNIST_train, batch_size=256, shuffle=True)
 
 test_dataloader = DataLoader(MNIST_test, batch_size=256, shuffle=False)
 
-# TODO(@lukehan): Move this to the plotting section
-plt.rcParams['figure.figsize'] = [6.4, 4.8]
 
-
+# List for test statistics on different dimensions.
 dimension_list = list()
 budget_list = list()
 sigma_list = list()
@@ -153,18 +170,21 @@ delta_list = list()
 error_list = list()
 accuracy_list = list()
 
-use_hadamard_transform = False
-
 N_CLASSES = 10
 NUM_EXPERIMENTS = 100
 
 
 for num_output_channel in range(32, 76, 4):
+    # Define MNL model, train on training set
     base_model = BaseModel(num_output_channel).to(device)
     train_base_model(train_dataloader, base_model, device, max_iter=1)
+
+    # Evaluate test accuracy
     base_model.eval()
     accuracy = test_accuracy(test_dataloader, base_model, device).item()
     accuracy_list.append(accuracy)
+
+    # Transform test data to a 1D vector.
     flatten_transform = transforms.Compose([transforms.ToTensor(),
                                             TransformToLinear(base_model, device)])
     MNIST_test_flattened = datasets.MNIST(root='MNIST_data/',
@@ -173,36 +193,29 @@ for num_output_channel in range(32, 76, 4):
                                           download=True)
     test_set_flattened_loader = DataLoader(MNIST_test_flattened, batch_size=1, shuffle=False)
 
+    # Variables for aggregating test statistics across all experiments
     wrong_approx_num = 0
     budget_sum = 0
     error_sum = 0
-    # gain_sum = 0
-    # sigma_sum = 0
     gain_sublist = list()
     sigma_sublist = list()
 
-    # Extract linear layer's weight from tranied model
+    # Extract linear layer's weight from trained model
     A = base_model.get_linear_weight()
     A_ndarray = A.detach().cpu().numpy()
 
+    # Get dimension of the linear layer
     dimension = A.shape[1]
-
     print("dimension:", dimension)
     dimension_list.append(dimension)
-    budget_list_aux = list()
 
-    epsilon = 0.1
-    delta = 0.01
-    top_k = 1
-
-    if use_hadamard_transform:
+    if USE_HADAMARD_TRANSFORM:
         dPad = int(2 ** np.ceil(np.log2(dimension)))
         D = np.diag(np.random.choice([-1, 1], size=dPad))
 
     test_set_iterator = iter(test_set_flattened_loader)
 
     for seed in range(NUM_EXPERIMENTS):
-        #print(seed)
         x, label = next(test_set_iterator)
         x_ndarray = x[0].detach().cpu().numpy()
 
@@ -210,9 +223,9 @@ for num_output_channel in range(32, 76, 4):
         mu = TEMP * A_ndarray @ x_ndarray
         mu_exp = np.exp(mu - np.max(mu))
         z = mu_exp / np.sum(mu_exp)
+        true_best_index = np.argmax(z)
 
         gain = N_CLASSES * np.sum(np.exp(2 * (mu - np.max(mu)))) / (np.sum(np.exp(mu - np.max(mu)))**2)
-        #print("gain:", gain)
         gain_sublist.append(gain)
 
         sigma = approx_sigma(A_ndarray, x_ndarray, dimension, TEMP)
@@ -220,7 +233,8 @@ for num_output_channel in range(32, 76, 4):
 
 
         # AdaSoftmax
-        if use_hadamard_transform:
+        if USE_HADAMARD_TRANSFORM:
+            # Pad A and x to the nearest power of 2 larger than d to enable hadamard transform
             Apad = np.pad(A_ndarray, ((0, 0), (0, dPad - dimension)), 'constant', constant_values=0)
             xpad = np.pad(x_ndarray, (0, dPad - dimension), 'constant', constant_values=0)
 
@@ -228,62 +242,43 @@ for num_output_channel in range(32, 76, 4):
             A_pad_torch = torch.tensor(Apad)
             x_pad_torch = torch.tensor(xpad)
 
+            # Apply hadamard transform
             Aprime = hadamard_transform(A_pad_torch @ D).numpy()
             xprime = hadamard_transform(x_pad_torch @ D).numpy()
 
             bandit_topk_indices, z_hat, bandit_budget = ada_softmax(A=Aprime,
                                                                     x=xprime,
-                                                                    epsilon=epsilon,
-                                                                    delta=delta,
+                                                                    epsilon=EPSILON,
+                                                                    delta=DELTA,
                                                                     samples_for_sigma=dPad,
                                                                     beta=TEMP,
-                                                                    k=top_k,
+                                                                    k=TOP_K,
                                                                     verbose=True
                                                                     )
-        elif PROFILE:
-            bandit_topk_indices, z_hat, bandit_budget, profiling_results = ada_softmax(A=A_ndarray,
-                                                                                      x=x_ndarray,
-                                                                                      epsilon=epsilon,
-                                                                                      delta=delta,
-                                                                                      samples_for_sigma=dimension,
-                                                                                      beta=TEMP,
-                                                                                      k=top_k,
-                                                                                      verbose=True,
-                                                                                      )
-
-            for (key, value) in profiling_results.items():
-                print(key, value)
         else:
             bandit_topk_indices, z_hat, bandit_budget = ada_softmax(A=A_ndarray,
                                                                     x=x_ndarray,
-                                                                    epsilon=epsilon,
-                                                                    delta=delta,
+                                                                    epsilon=EPSILON,
+                                                                    delta=DELTA,
                                                                     samples_for_sigma=dimension,
                                                                     beta=TEMP,
-                                                                    k=top_k,
+                                                                    k=TOP_K,
                                                                     verbose=False
                                                                     )
 
-        # TODO(@lukehan): Change how we evaluate delta and epsilon(Like in the adaptive_softmax/test_script.py)
-        cur_epsilon = np.abs(z_hat[bandit_topk_indices] - z[bandit_topk_indices]) / z[bandit_topk_indices]
-        # print(z_hat[bandit_topk_indices], z[bandit_topk_indices])
 
+        z_hat_best_arm = z_hat[bandit_topk_indices]
+        z_best_arm = z[bandit_topk_indices]
+        cur_epsilon = np.abs(z_hat_best_arm- z_best_arm) / z_best_arm
 
-        if cur_epsilon[0] <= epsilon and bandit_topk_indices[0] == np.argmax(z): #ASSUMING K=1
+        if cur_epsilon[0] <= EPSILON and bandit_topk_indices[0] == true_best_index: #ASSUMING K=1
             error_sum += cur_epsilon[0]
-        elif bandit_topk_indices[0] == np.argmax(z):
-            wrong_approx_num += 1
         else:
-            print(seed)
-            #error_sum += cur_epsilon[0]
             wrong_approx_num += 1
-            print(bandit_budget)
-            print(z)
-            print(z_hat)
-            print(label, bandit_topk_indices[0], np.argmax(z), cur_epsilon[0])
 
         budget_sum += bandit_budget
 
+    # Aggregate test statistics across test of NUM_EXPERIMENT times
     imp_delta = wrong_approx_num / NUM_EXPERIMENTS
     average_budget = budget_sum / NUM_EXPERIMENTS
     # TODO(@lukehan): Take median instead
@@ -297,7 +292,6 @@ for num_output_channel in range(32, 76, 4):
     print("=>average error:", imp_epsilon)
     print("=>median gain:", gain_median)
     print("=>median sigma:", sigma_median)
-
     print("=>wrong_approx_num:", wrong_approx_num)
 
     budget_list.append(average_budget)
