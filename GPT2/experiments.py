@@ -5,7 +5,7 @@ import numpy as np
 from transformers import GPT2LMHeadModel, GPT2TokenizerFast
 from datasets import load_dataset
 from copy import deepcopy
-from typing import Union, Tuple, Optional, Callable
+from typing import Union, Tuple, Optional, Callable, List
 from tqdm import tqdm
 
 import os, sys
@@ -15,6 +15,49 @@ from gpt_constants import (
     MULTIPLICATIVE_ERROR,
     DELTA_ERROR,
 )
+
+def load_from_datasets(
+        dataset_name: str = "wikitext",
+        num_samples: int = None,
+):
+    """
+    Given dataset_name, load the dataset with the correct number of samples
+    """
+    test_set = None
+    if dataset_name == "wikitext":
+        test_set = load_dataset("wikitext", "wikitext-2-raw-v1", split="test")
+        if num_samples is None:
+            num_samples = len(test_set)
+    else:
+        print("doesn't support any other datasets as of now")
+
+    return test_set[:num_samples]
+
+
+def check_correctness(
+    naive_results: torch.Tensor,
+    adaptive_results: torch.Tensor,
+    verbose: bool = False,
+) -> bool:
+    """
+    Function that checks if the two results are within epsilon multiplicative error (1 - delta)% of the time.
+    :param naive_results: the logits of the naive softmax
+    :param adaptive_results: the results of adasoftmax
+    :returns: whether we are within theoretical gaurantee defined above
+    """
+    not_within = 0
+    num_exp = len(naive_results)
+
+    for i in range(num_exp):
+        naive_logit = naive_results[i].item()
+        ada_logit = adaptive_results[i].item()
+        if abs(naive_logit - ada_logit) > MULTIPLICATIVE_ERROR * naive_logit:
+            not_within += 1
+
+    if verbose:
+        print(f"=> delta error is {not_within / num_exp} for epsilon = {MULTIPLICATIVE_ERROR}" )
+
+    return (not_within / num_exp) < DELTA_ERROR
 
 
 def get_adaptive_forward(model) -> Callable:
@@ -62,25 +105,30 @@ def get_adaptive_forward(model) -> Callable:
         # converting (batch, sequence, embed) -> (batch x sequence, embed)
         hidden_states = transformer_outputs[0]
         flattened_states = hidden_states.view(-1, hidden_states.size(-1))
-
-        adaptive_results = []
         A = model.lm_head.weight.data.numpy()   # size = (embed, vocab_size)
         _, z, _ = ada_softmax(A=A, x=flattened_states[-1].numpy(), samples_for_sigma=flattened_states.shape[0])
-        # for state in flattened_states:
-        #     _, z, _ = ada_softmax(A=A, x=state.numpy(), samples_for_sigma=state.shape[0])
-        #     adaptive_results.append(z)
-        # adaptive_results_np = np.array(adaptive_results)
-        # likelihood = torch.tensor(adaptive_results_np)
         likelihood = torch.tensor(z)
         return likelihood
 
     return adaptive_forward
 
 
-def sanity_check():
+def run_experiment(
+    exp_type: str = "gains",
+    dataset_name: str = "wikitext",
+    num_samples: int = None,
+    model_id: str = "gpt2",
+    stride: int = 512
+):
+    """
+    This function runs the given exp_type on the GPT model.
+    :param: either "correctness", "gains", or "both"
+    :param dataset_name: the dataset we're testing on
+    :param num_samples: the number of samples for the dataset
+    :param model_id: the model id of the gpt2 series to run experiment on
+    """
     # TODO: why is device on cpu even on the cluster??
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model_id = "gpt2"
     tokenizer = GPT2TokenizerFast.from_pretrained(model_id)
     naive_model = GPT2LMHeadModel.from_pretrained(model_id).to(device)
 
@@ -88,9 +136,7 @@ def sanity_check():
     adaptive_model = deepcopy(naive_model)
     adaptive_model.forward = get_adaptive_forward(naive_model)
 
-    num_samples = 100
-    stride = 512
-    test = load_dataset("wikitext", "wikitext-2-raw-v1", split="test")[:num_samples]
+    test = load_from_datasets("wikitext", num_samples)
     encodings = tokenizer("\n\n".join(test["text"]), return_tensors="pt")
     max_length = naive_model.config.n_positions
     seq_len = encodings.input_ids.size(1)
@@ -105,18 +151,6 @@ def sanity_check():
         input_ids = tokens[:, :-1].contiguous()
         target_id = tokens[:, -1]
 
-        # # get log likelihoods for the target only
-        # with torch.no_grad():
-        #     naive_logits = naive_model(input_ids, labels=None, return_dict=False)[0]
-        #     flattened_naive_logits = naive_logits.view(-1, naive_logits.size(-1))
-        #     import ipdb; ipdb.set_trace()
-        #     naive_ll = F.softmax(flattened_naive_logits, dim=1)  # TODO: should be (batch_size, 1)
-        #     adaptive_ll = adaptive_model(input_ids, labels=None)
-        #
-        # # CELoss averages the losses.
-        # naive_lls.append(torch.mean(naive_ll[:, target_id], dim=0))
-        # adaptive_lls.append(torch.mean(adaptive_ll[:, target_id], dim=0))
-        # get log likelihoods for the target only
         with torch.no_grad():
             naive_logits = naive_model(input_ids, labels=None, return_dict=False)[0]
             flattened_naive_logits = naive_logits.view(-1, naive_logits.size(-1))
@@ -130,18 +164,17 @@ def sanity_check():
         if end_loc == seq_len:
             break
 
-    # check to see if the two results are within epsilon multiplicative error (1 - delta)% of the time.
-    not_within = 0
-    num_exp = len(adaptive_lls)
-    for i in range(num_exp):
-        ada_logit = adaptive_lls[i].item()
-        naive_logit = naive_lls[i].item()
-        if abs(ada_logit - naive_logit) > MULTIPLICATIVE_ERROR * naive_logit:
-            not_within += 1
+    is_correct, gains = None, None
+    if exp_type == "both" or exp_type == "correctness":
+        is_correct = check_correctness(naive_lls, adaptive_lls, verbose=True)
+    if exp_type == "both" or exp_type == "gains":
+        gains = get_gains()
 
-    print(f"delta error is {not_within / num_exp}")
-    return (not_within / num_exp) < DELTA_ERROR
+
+
+def get_gains():
+
 
 
 if __name__ == "__main__":
-    sanity_check()
+    run_experiment()
