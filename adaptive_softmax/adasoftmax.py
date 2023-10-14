@@ -77,6 +77,7 @@ def estimate_mu_hat(
 
     n = atoms.shape[0]
     d = query.shape[0]
+
     T0_original = c_empirical_t0 * 17 * beta ** 2 * sigma ** 2 * np.log(6 * n / delta)
     T0 = int(np.ceil(
             min(
@@ -88,6 +89,7 @@ def estimate_mu_hat(
 
     # Do exact computation if theoretical complexity isn't less than dimension d
     if T0 >= d:
+        # print("Exact computation because T0 > d")
         mu = (atoms @ query).astype(np.float64)
 
         if verbose:
@@ -131,6 +133,7 @@ def estimate_mu_hat(
     updated_mu_hat = np.empty(n)
     for i in range(n):
         if n_samples[i] >= d:
+            # TODO: Is this forgiven?
             updated_mu_hat[i] = atoms[i] @ query
         else:
             mu_approx = atoms[i, T0:n_samples[i]] @ query[T0:n_samples[i]] * d
@@ -255,6 +258,9 @@ def find_topk_arms(
             break
 
         # update mu approximation with more samples
+        # TODO: for testing purpose. Remove
+        print("Additional sampling in best-arm identification")
+
         sampled_mu_approx = np.empty(np.sum(mask))
         for i, atom_index in enumerate(surviving_arms):
             samples_used = d_used[atom_index]
@@ -269,9 +275,7 @@ def find_topk_arms(
 
     # Brute force computation for the remaining candidates
     if compute_exactly and num_found < k:
-        print("compute exactly")
-        print(d_used)
-        print(surviving_arms)
+        print("compute exact")
         curr_mu = d_used * mu_approx
         for i, atom_index in enumerate(surviving_arms):
             used = d_used[atom_index]
@@ -281,11 +285,6 @@ def find_topk_arms(
 
         mu_approx = curr_mu / d_used  # to maintain consistent naming
         mu_exact_search = curr_mu.copy()
-
-        """
-        mu_approx = atoms@query
-        mu_exact_search = mu_approx.copy()
-        """
 
         while num_found < k:
             best_index = np.argmax(mu_exact_search)
@@ -385,6 +384,8 @@ def ada_softmax(
     for arm_index in best_indices:
         used_sample = d_used_updated[arm_index]
         if used_sample < n_arm_pull:
+            # TODO: For testing purpose. Remove
+            print("Additional sampling in numerator estimation")
             mu_additional = x.shape[0] * A[arm_index, used_sample: n_arm_pull] @ x[used_sample: n_arm_pull]
             updated_mu_hat[arm_index] = (updated_mu_hat[arm_index] * used_sample + mu_additional) / n_arm_pull
 

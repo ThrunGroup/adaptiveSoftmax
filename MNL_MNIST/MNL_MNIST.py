@@ -46,7 +46,7 @@ def train_base_model(dataloader, model, device, max_iter=10):
 
         avg_loss += loss / 256
 
-      print(f"epoch {epoch} => loss: {avg_loss}")
+      # print(f"epoch {epoch} => loss: {avg_loss}")
 
 
 def test_accuracy(test_loader, model, device):
@@ -176,8 +176,10 @@ for num_output_channel in range(32, 76, 4):
     wrong_approx_num = 0
     budget_sum = 0
     error_sum = 0
-    gain_sum = 0
-    sigma_sum = 0
+    # gain_sum = 0
+    # sigma_sum = 0
+    gain_sublist = list()
+    sigma_sublist = list()
 
     # Extract linear layer's weight from tranied model
     A = base_model.get_linear_weight()
@@ -211,10 +213,10 @@ for num_output_channel in range(32, 76, 4):
 
         gain = N_CLASSES * np.sum(np.exp(2 * (mu - np.max(mu)))) / (np.sum(np.exp(mu - np.max(mu)))**2)
         #print("gain:", gain)
-        gain_sum += gain
+        gain_sublist.append(gain)
 
         sigma = approx_sigma(A_ndarray, x_ndarray, dimension, TEMP)
-        sigma_sum += sigma
+        sigma_sublist.append(sigma)
 
 
         # AdaSoftmax
@@ -286,33 +288,33 @@ for num_output_channel in range(32, 76, 4):
     average_budget = budget_sum / NUM_EXPERIMENTS
     # TODO(@lukehan): Take median instead
     imp_epsilon = error_sum / NUM_EXPERIMENTS
-    gain_mean = gain_sum / NUM_EXPERIMENTS
-    sigma_mean = sigma_sum / NUM_EXPERIMENTS
+    gain_median = np.median(np.array(gain_sublist))
+    sigma_median = np.median(np.array(sigma_sublist))
 
     print("=>delta:", imp_delta)
     print("=>average budget:", average_budget)
     print("=>Naive budget is:", dimension*N_CLASSES)
     print("=>average error:", imp_epsilon)
-    print("=>average gain:", gain_mean)
-    print("=>average sigma:", sigma_mean)
+    print("=>median gain:", gain_median)
+    print("=>median sigma:", sigma_median)
 
     print("=>wrong_approx_num:", wrong_approx_num)
 
     budget_list.append(average_budget)
-    gain_list.append(gain_mean)
+    gain_list.append(gain_median)
     error_list.append(imp_epsilon)
     delta_list.append(imp_delta)
-    sigma_list.append(sigma_mean)
+    sigma_list.append(sigma_median)
 
 dimension_list = np.array(dimension_list)
 budget_list = np.array(budget_list)
 
 # Linear fit on adaSoftmax's sample complexity for cleaner plot
-c1, c0 = np.polyfit(dimension_list, budget_list, 1)
-linear_fit_points = c1 * dimension_list + c0
+complexity_c1, complexity_c0 = np.polyfit(dimension_list, budget_list, 1)
+complexity_linear_fit_points = complexity_c1 * dimension_list + complexity_c0
 
 # Sample complexity plot
-plt.plot(dimension_list, linear_fit_points, "r--.", label="adaptive linear fit")
+plt.plot(dimension_list, complexity_linear_fit_points, "r--.", label="adaptive linear fit")
 plt.scatter(dimension_list, budget_list, color="red", label="adaptive_softmax")
 plt.plot(dimension_list, N_CLASSES * dimension_list, "b--.", label="naive")
 plt.legend()
@@ -323,7 +325,8 @@ plt.clf()
 
 # Sample complexity plot(on log scale)
 plt.yscale("log")
-plt.plot(dimension_list, budget_list, "r--.", label="adaptive_softmax")
+plt.plot(dimension_list, complexity_linear_fit_points, "r--.", label="adaptive linear fit")
+plt.scatter(dimension_list, budget_list, color="red", label="adaptive_softmax")
 plt.plot(dimension_list, N_CLASSES * dimension_list, "b--.", label="naive")
 plt.legend()
 plt.xlabel("dimension(n_features)")
@@ -345,8 +348,13 @@ plt.ylabel("average gain")
 plt.savefig("gain_plot.png", bbox_inches="tight")
 plt.clf()
 
+# linear fit on sigma for cleaner plot
+sigma_c1, sigma_c0 = np.polyfit(dimension_list, sigma_list, 1)
+sigma_linear_fit_points = sigma_c1 * dimension_list + sigma_c0
+
 # average sigma(median) plot
-plt.plot(dimension_list, sigma_list)
+plt.scatter(dimension_list, sigma_list)
+plt.plot(dimension_list, sigma_linear_fit_points)
 plt.xlabel("dimension")
 plt.ylabel("average sigma")
 plt.savefig("sigma_plot.png", bbox_inches="tight")
