@@ -264,7 +264,7 @@ def find_topk_arms(
         d_used[mask] += batch_size
 
     # Brute force computation for the remaining candidates
-    if compute_exactly and num_found < k:
+    if compute_exactly:
         curr_mu = d_used * mu_approx
         for i, atom_index in enumerate(surviving_arms):
             used = d_used[atom_index]
