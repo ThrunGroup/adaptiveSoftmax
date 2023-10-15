@@ -18,6 +18,41 @@ def precompute_mu(
     A: np.ndarray,
     x: np.ndarray,
 ):
+    num_arms = A.shape[0]
+    dim = x.shape[0]
+
+    elmul = A * x
+    num_bins = int(dim ** 0.5)
+
+    outliers = set()
+
+    # TODO: Maybe optimize this?
+    for i in range(num_arms):
+        freq, edges, _ = plt.hist(elmul[i], bins=num_bins)
+
+        # This is the bin centered around the mean
+        most_frequent_bin_index = np.argmax(np.array(freq))
+        lower_bound = edges[most_frequent_bin_index]
+        upper_bound = edges[most_frequent_bin_index]
+
+        outlier_indicator = np.logical_or(elmul <= lower_bound, elmul >= upper_bound)
+        outlier_indices = np.nonzero(outlier_indicator)[0]
+
+        import ipdb; ipdb.set_trace()
+
+        outliers.update(outlier_indices)
+
+
+
+
+    # TODO: find the j's that correspond to the outlier nonzero bins
+    print(f"dimensions are {n_arms, dim}\n")
+    print(f"num bins {num_bins}\n")
+    print(f"freq in bins: {freq}\n")
+    print(f"bin edges: {edges}\n")
+    print(f"scaled sigma is: {scaled_sigma}\n")
+
+
 
 
 

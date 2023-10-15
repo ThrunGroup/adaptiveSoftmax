@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 import os, sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'adaptive_softmax'))
-from adasoftmax import ada_softmax
+from adasoftmax import ada_softmax, precompute_mu
 from gpt_constants import (
     MULTIPLICATIVE_ERROR,
     DELTA_ERROR,
@@ -137,6 +137,10 @@ def get_adaptive_forward(model) -> Callable:
 
         A = model.lm_head.weight.data.numpy()   # size = (embed, vocab_size)
         x = flattened_states[-1].numpy()
+
+        # TODO: fix return values, ...
+        precompute_mu(A, x)
+
         _, z, adaptive_budget = ada_softmax(
             A=A,
             x=x,
