@@ -19,30 +19,39 @@ def precompute_mu(
     x: np.ndarray,
 ):
     num_arms = A.shape[0]
-    dim = x.shape[0]
+    outlier_frequency = np.zeros(num_arms)
 
-    elmul = A * x
-    num_bins = int(dim ** 0.5)
+    # TODO: Seems like a bad practice to define function in a function. Better way?
+    def find_outliers(A_row):
+        """
+        Auxilary function to feed in to the apply_along_axis function.
+        Find the outlier in A_row*x(element-wise multiplication), and updates the outlier frequency array.
 
-    outliers = set()
+        :param A_row: row of matrix A
+        :param x: vector x
+        :param outlier_frequency_array: frequency of the indices being an outlier.
+        :return: None
+        """
+        dim = x.shape[0]
 
-    # TODO: Maybe optimize this?
-    for i in range(num_arms):
-        freq, edges, _ = plt.hist(elmul[i], bins=num_bins)
+        elmul = A_row * x
+        num_bins = int(dim ** 0.5)
+
+        freq, edges = np.histogram(elmul[i], bins=num_bins)
 
         # This is the bin centered around the mean
         most_frequent_bin_index = np.argmax(np.array(freq))
         lower_bound = edges[most_frequent_bin_index]
-        upper_bound = edges[most_frequent_bin_index]
+        upper_bound = edges[most_frequent_bin_index + 1]
 
-        outlier_indicator = np.logical_or(elmul <= lower_bound, elmul >= upper_bound)
+        outlier_indicator = np.logical_or(elmul[i] <= lower_bound, elmul[i] >= upper_bound)
         outlier_indices = np.nonzero(outlier_indicator)[0]
 
-        import ipdb; ipdb.set_trace()
+        outlier_frequency[outlier_indices] += 1
 
-        outliers.update(outlier_indices)
+    np.apply_along_axis(find_outliers, axis=1, arr=A)
 
-
+    import ipdb; ipdb.set_trace()
 
 
     # TODO: find the j's that correspond to the outlier nonzero bins
@@ -187,6 +196,7 @@ def estimate_mu_hat(
         if n_samples[i] >= d:
             updated_mu_hat[i] = atoms[i] @ query
         else:
+            # TODO: Change mu_
             mu_approx = atoms[i, T0:n_samples[i]] @ query[T0:n_samples[i]] * d
             updated_mu_hat[i] = (mu_hat[i] * T0 + mu_approx) / max(n_samples[i], 1)
 
