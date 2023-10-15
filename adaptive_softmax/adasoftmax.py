@@ -1,4 +1,6 @@
 import numpy as np
+import matplotlib.pyplot as plt
+
 from numba import njit
 from typing import Tuple, List, Any
 from constants import (
@@ -12,11 +14,19 @@ from constants import (
     DEFAULT_DELTA
 )
 
+def precompute_mu(
+    A: np.ndarray,
+    x: np.ndarray,
+):
+
+
+
 
 def approx_sigma(
     A: np.ndarray,
     x: np.ndarray,
-    num_samples: int
+    num_samples: Any,
+    verbose: bool = False,
 ) -> float:
     """
     Function to approximate sigma more rigorously. We return the median of the std for the estimation
@@ -28,16 +38,29 @@ def approx_sigma(
 
     :returns: the sigma approximation
     """
-    n_arms = A.shape[0]
+    n_arms, dim = A.shape
+    if num_samples is None:
+        num_samples = dim
+
     elmul = A[:, :num_samples] * x[:num_samples]
+    sigma = np.std(elmul, axis=1)
 
-    if PROFILE:
-        pass
+    # we need to find index explicitly for debugging purposes
+    median_i = np.argsort(sigma)[len(sigma) // 2]
+    scaled_sigma = dim * sigma[median_i]
 
-    sigma = np.empty(n_arms)
-    for i in range(n_arms):
-        sigma[i] = np.std(elmul[i])
-    return x.shape[0] * np.median(sigma)
+    if verbose:
+        num_bins = int(dim ** 0.5)
+        freq, edges, _ = plt.hist(elmul[median_i], bins=num_bins)
+
+        # TODO: find the j's that correspond to the outlier nonzero bins
+        print(f"dimensions are {n_arms, dim}\n")
+        print(f"num bins {num_bins}\n")
+        print(f"freq in bins: {freq}\n")
+        print(f"bin edges: {edges}\n")
+        print(f"scaled sigma is: {scaled_sigma}\n")
+
+    return scaled_sigma
 
 
 def estimate_mu_hat(
@@ -312,10 +335,7 @@ def ada_softmax(
 
     :return: top-k indices, estimation of softmax value across all indices, and total number of sampled used.
     """
-    sigma = approx_sigma(A, x, samples_for_sigma)
-    if verbose:
-        print("sigma:", sigma)
-
+    sigma = approx_sigma(A=A, x=x, num_samples=None, verbose=True)
     if PROFILE:
         mu_hat, d_used, profiling_results = estimate_mu_hat(
             atoms=A,

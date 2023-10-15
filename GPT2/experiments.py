@@ -113,6 +113,7 @@ def get_adaptive_forward(model) -> Callable:
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        verbose: bool = False,
     ) -> torch.Tensor:
         labels = None   # we're only concerned with the log likelihood
         transformer_outputs = model.transformer(
@@ -141,6 +142,7 @@ def get_adaptive_forward(model) -> Callable:
             x=x,
             samples_for_sigma=flattened_states.shape[0],
             beta=WIKITEXT_BETA,   # mu is very spiky
+            verbose=verbose,
         )
         likelihood = torch.tensor(z)
 
@@ -154,7 +156,8 @@ def run_experiment(
     dataset_name: str = "wikitext",
     num_samples: int = None,
     model_id: str = "gpt2",
-    stride: int = 512
+    stride: int = 512,
+    verbose: bool = True,
 ):
     """
     This function runs the given exp_type on the GPT model.
@@ -195,7 +198,7 @@ def run_experiment(
             naive_ll = F.softmax(flattened_naive_logits, dim=1)[-1, target_id]  # TODO: should be (batch_size, 1)
             naive_budget = naive_shape[0] * naive_shape[1]
 
-            adaptive_ll, adaptive_budget = adaptive_model(input_ids, labels=None)
+            adaptive_ll, adaptive_budget = adaptive_model(input_ids, labels=None, verbose=verbose)
 
         # CELoss averages the losses. But, we're only comparing likelihood
         naive_lls.append(naive_ll)
@@ -214,4 +217,4 @@ def run_experiment(
 
 
 if __name__ == "__main__":
-    run_experiment(num_samples=100)
+    run_experiment(num_samples=100, verbose=False)
