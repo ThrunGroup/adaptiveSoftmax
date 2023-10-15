@@ -1,6 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+# For approximate_mu
+import torch
+
 from numba import njit
 from typing import Tuple, List, Any
 from constants import (
@@ -51,7 +54,15 @@ def precompute_mu(
 
     np.apply_along_axis(find_outliers, axis=1, arr=A)
 
-    import ipdb; ipdb.set_trace()
+
+    # For profiling purpose
+    top_5_outlier_indices = torch.topk(torch.from_numpy(outlier_frequency), 5).indices
+
+    print("top-5 frequent outliers and frequency")
+    for i in range(5):
+        outlier_index = top_5_outlier_indices[i]
+        print("column index j:", outlier_index)
+        print("frequency:", outlier_frequency[outlier_index])
 
 
     # TODO: find the j's that correspond to the outlier nonzero bins
@@ -60,10 +71,6 @@ def precompute_mu(
     print(f"freq in bins: {freq}\n")
     print(f"bin edges: {edges}\n")
     print(f"scaled sigma is: {scaled_sigma}\n")
-
-
-
-
 
 
 def approx_sigma(
