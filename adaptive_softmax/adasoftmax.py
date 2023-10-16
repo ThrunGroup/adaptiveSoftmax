@@ -20,50 +20,39 @@ from constants import (
 def precompute_mu(
     A: np.ndarray,
     x: np.ndarray,
-) -> [np.ndarray, np.ndarray]:
+) -> [np.ndarray, np.ndarray, int]:
     """
     :param A: matrix A in the paper
     :param x: vector x in the paper
 
-    :returns: precomputed mu, indices with top-10 bias frequency
+    :returns: precomputed mu, outlier's indices, number of outliers
     """
-    print("in precompute mu now")
-
     num_arms, dim = A.shape
-    elmul = A * x
 
-    elmul_mean = np.mean(elmul, axis=1)
-    elmul_std = np.std(elmul, axis=1)
+    # calculate the frequency that each column is classified as outlier in each arm
+    elems = A * x
+    mu = elems.mean(axis=1)
+    stds = elems.std(axis=1)
+    devs = np.abs(elems - mu.reshape(-1, 1)) / stds.reshape(-1, 1)
+    numDevs = (devs > 1).sum(axis=0)
 
-    lower_bound = (elmul_mean - elmul_std).reshape(-1, 1)
-    upper_bound = (elmul_mean + elmul_std).reshape(-1, 1)
+    # get indices of columns that is classified as outliers on more than half of the arms
+    top_outlier_indices = np.nonzero(numDevs >= int(num_arms / 2))[0]
+    num_outliers = top_outlier_indices.shape[0]
 
-    outlier_mask = np.logical_or(elmul < lower_bound, elmul > upper_bound)
+    # For profiling purpose
+    print("number of outliers:", num_outliers)
 
-    mu_precompute = np.empty(num_arms)
-    outlier_numbers = np.empty(num_arms)
+    # precompute for the outlier indices
+    mu_precompute = (dim / num_outliers) * A[:, top_outlier_indices] @ x[top_outlier_indices]
 
-    for i in range(num_arms):
-        num_outliers = np.sum(outlier_mask)
-        mu_precompute[i] = (dim / num_outliers) * A[i, outlier_mask[i]] @ x[outlier_mask[i]]
-        outlier_numbers[i] = num_outliers
-
-    return mu_precompute, outlier_mask, outlier_numbers
-
-
-    # TODO: find the j's that correspond to the outlier nonzero bins
-    print(f"dimensions are {n_arms, dim}\n")
-    print(f"num bins {num_bins}\n")
-    print(f"freq in bins: {freq}\n")
-    print(f"bin edges: {edges}\n")
-    print(f"scaled sigma is: {scaled_sigma}\n")
+    return mu_precompute, top_outlier_indices, num_outliers
 
 
 def approx_sigma(
     A: np.ndarray,
     x: np.ndarray,
     num_samples: Any,
-    outlier_mask: np.ndarray,
     verbose: bool = False,
 ) -> float:
     """
@@ -82,15 +71,8 @@ def approx_sigma(
     if num_samples is None:
         num_samples = dim
 
-    # Note that vectorized calculation might be impossible, as there can be different numbers of outliers
-    # TODO: Any workaround?
-    sigma = np.empty(n_arms)
-
-    for i in n_arms:
-        include_mask = np.logical_not(outlier_mask[i])
-        elmul = A[i, include_mask] * x[include_mask]
-        sigma[i] = np.std(elmul)
-
+    elmul = A * x
+    sigma = np.std(elmul, axis=1)
 
     # we need to find index explicitly for debugging purposes
     median_i = np.argsort(sigma)[len(sigma) // 2]
@@ -383,11 +365,17 @@ def ada_softmax(
 
     :return: top-k indices, estimation of softmax value across all indices, and total number of sampled used.
     """
-    mu_precomputed, outlier_mask, outlier_numbers = precompute_mu(A=A,
-                                                                  x=x)
 
+    mu_precomputed, outlier_mask, num_outliers = precompute_mu(A=A,
+                                                 x=x,
+                                                 )
 
-    sigma = approx_sigma(A=A, x=x, num_samples=None, outlier_mask=outlier_mask, verbose=True)
+    # Exclude columns classified as outliers from sigma calculation
+    indices_for_sigma_calculation = np.ones(x.shape[0])
+    indices_for_sigma_calculation[outlier_mask] = 0
+    indices_for_sigma_calculation = indices_for_sigma_calculation.astype(np.bool_)
+
+    sigma = approx_sigma(A=A[:, indices_for_sigma_calculation], x=x[indices_for_sigma_calculation], num_samples=None, verbose=True)
 
     if PROFILE:
         mu_hat, d_used, profiling_results = estimate_mu_hat(
@@ -411,7 +399,7 @@ def ada_softmax(
         )
 
     # incorporate precomputed mu into mu_hat
-    mu_hat = (d_used * mu_hat + outlier_numbers * mu_precomputed) / (d_used + outlier_numbers)
+    mu_hat = (d_used * mu_hat + num_outliers * mu_precomputed) / (d_used + num_outliers)
 
     if PROFILE:
         profiling_results["sigma"] = sigma
