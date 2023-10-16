@@ -149,7 +149,6 @@ def get_adaptive_forward(model) -> Callable:
             verbose=verbose,
         )
         likelihood = torch.tensor(z)
-
         return likelihood, adaptive_budget
 
     return adaptive_forward
@@ -199,10 +198,14 @@ def run_experiment(
         with torch.no_grad():
             naive_logits = naive_model(input_ids, labels=None, return_dict=False)[0]
             flattened_naive_logits = naive_logits.view(-1, naive_logits.size(-1))
-            naive_ll = F.softmax(flattened_naive_logits, dim=1)[-1, target_id]  # TODO: should be (batch_size, 1)
+            naive_ll = F.softmax(WIKITEXT_BETA * flattened_naive_logits, dim=1)[-1, target_id]  # TODO: should be (batch_size, 1)
             naive_budget = naive_shape[0] * naive_shape[1]
 
-            adaptive_ll, adaptive_budget = adaptive_model(input_ids, labels=None, verbose=verbose)
+            adaptive_ll, adaptive_budget = adaptive_model(
+                input_ids,
+                labels=None,
+                verbose=verbose
+            )
 
         # CELoss averages the losses. But, we're only comparing likelihood
         naive_lls.append(naive_ll)

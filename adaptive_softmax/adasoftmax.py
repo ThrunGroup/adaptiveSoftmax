@@ -17,6 +17,22 @@ from constants import (
     DEFAULT_DELTA
 )
 
+
+def hadamard_transform(matrix):
+    n = matrix.shape[0]
+    transformed_matrix = np.copy(matrix)
+
+    # Iterate over the matrix size to perform the Hadamard transform
+    for i in range(int(np.log2(n))):
+        # Create a Hadamard tile of the appropriate size
+        hadamard_tile = np.kron([[1, 1], [1, -1]], np.eye(2 ** i))
+        submatrix_size = n // (2 ** i)
+        transformed_matrix[:submatrix_size, :submatrix_size] = hadamard_tile @ transformed_matrix[:submatrix_size,
+                                                                               :submatrix_size]
+
+    return transformed_matrix
+
+
 def precompute_mu(
     A: np.ndarray,
     x: np.ndarray,
@@ -337,8 +353,6 @@ def find_topk_arms(
     return best_ind[:k], mu_approx, d_used
 
 
-# adaSoftmax with warm start
-
 def ada_softmax(
     A: np.ndarray,
     x: np.ndarray,
@@ -365,40 +379,33 @@ def ada_softmax(
 
     :return: top-k indices, estimation of softmax value across all indices, and total number of sampled used.
     """
+    # precompute the "heavy hitters" and get mask for the rest
+    mu_precomputed, heavy_hitters, num_outliers = precompute_mu(A=A, x=x)
+    subset_mask = np.ones(x.shape[0])
+    subset_mask[heavy_hitters] = 0
+    subset_mask = subset_mask.astype(np.bool_)
+    A_subset = hadamard_transform(A[:, subset_mask])    # dimensions should maintain the same
+    x_subset = x[subset_mask]
 
-    mu_precomputed, outlier_mask, num_outliers = precompute_mu(A=A,
-                                                 x=x,
-                                                 )
+    # this is so we get the exact sigma <- for debugging purposes
+    samples_for_sigma = None
+    sigma = approx_sigma(
+        A=A_subset,
+        x=x_subset,
+        num_samples=samples_for_sigma,
+        verbose=True
+    )
 
-    # Exclude columns classified as outliers from sigma calculation
-    indices_for_sigma_calculation = np.ones(x.shape[0])
-    indices_for_sigma_calculation[outlier_mask] = 0
-    indices_for_sigma_calculation = indices_for_sigma_calculation.astype(np.bool_)
-
-    sigma = approx_sigma(A=A[:, indices_for_sigma_calculation], x=x[indices_for_sigma_calculation], num_samples=None, verbose=True)
-
-    if PROFILE:
-        mu_hat, d_used, profiling_results = estimate_mu_hat(
-            atoms=A,
-            query=x,
-            epsilon=epsilon / 2,
-            delta=delta / 3,
-            sigma=sigma,
-            beta=beta,
-            verbose=verbose,
-        )
-    else:
-        mu_hat, d_used = estimate_mu_hat(
-            atoms=A,
-            query=x,
-            epsilon=epsilon / 2,
-            delta=delta / 3,
-            sigma=sigma,
-            beta=beta,
-            verbose=verbose,
-        )
-
-    # incorporate precomputed mu into mu_hat
+    # Algorithm 1 in the paper
+    mu_hat, d_used = estimate_mu_hat(
+        atoms=A_subset,
+        query=x_subset,
+        epsilon=epsilon / 2,
+        delta=delta / 3,
+        sigma=sigma,
+        beta=beta,
+        verbose=verbose,
+    )
     mu_hat = (d_used * mu_hat + num_outliers * mu_precomputed) / (d_used + num_outliers)
 
     if PROFILE:
@@ -410,8 +417,8 @@ def ada_softmax(
         stage_budgets["denom budget"] = np.sum(d_used).item()
 
     best_indices, updated_mu_hat, d_used_updated = find_topk_arms(
-        atoms=A,
-        query=x,
+        atoms=A_subset,
+        query=x_subset,
         sigma=sigma,
         delta=delta / 3,
         mu_approx=mu_hat,
