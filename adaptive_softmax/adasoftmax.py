@@ -401,7 +401,7 @@ def ada_softmax(
         verbose=True
     )
 
-    # Algorithm 1 in the paper
+    # Algorithm 1 in the paper. Denominator (i.e. s_hat) estimation
     mu_hat, d_used = estimate_mu_hat(
         atoms=A,
         query=x,
@@ -411,8 +411,10 @@ def ada_softmax(
         beta=beta,
         verbose=verbose,
     )
-
     mu_hat = (d_used * mu_hat + n_heavy * mu_precomputed) / (d_used + n_heavy)
+
+    # Best arm identification for y_hat (i.e. numerator) estimation.
+    # NOTE: the additional samples used for this process will also be used to update mu
     best_indices, updated_mu_hat, d_used_updated = find_topk_arms(
         atoms=A,
         query=x,
@@ -424,54 +426,29 @@ def ada_softmax(
         k=k,
     )
 
-    if RETURN_STAGE_BUDGETS:
-        stage_budgets["denom+best-arm budget"] = np.sum(d_used_updated).item()
-
-    if PROFILE:
-        profiling_results["denom+best-arm budget"] = np.sum(d_used_updated).item()
-
     # Total samples to use for better approximation of the mu of the top k arms.
-    # This means we sample n_arm_pull - used_samples more times.
+    # This means we sample n_arm_pull - used_samples more times and update mu accordingly
+    dim_d = x.shape[0]
     n_arm_pull = int(min(
         np.ceil((288 * sigma ** 2 * beta ** 2 * np.log(6 / delta)) / (epsilon ** 2)),
-        x.shape[0]
+        dim_d
     ))
     for arm_index in best_indices:
         used_sample = d_used_updated[arm_index]
         if used_sample < n_arm_pull:
-            mu_additional = x.shape[0] * A[arm_index, used_sample: n_arm_pull] @ x[used_sample: n_arm_pull]
+            mu_additional = dim_d * A[arm_index, used_sample: n_arm_pull] @ x[used_sample: n_arm_pull]
             updated_mu_hat[arm_index] = (updated_mu_hat[arm_index] * used_sample + mu_additional) / n_arm_pull
 
+    # compute budget
     d_used_updated[best_indices] = np.maximum(d_used_updated[best_indices], n_arm_pull)
+    budget = np.sum(d_used_updated).item()
 
     # Using logsumexp trick for numerical stability
     final_mu_hat = updated_mu_hat - np.max(updated_mu_hat)
-    y_hat = np.exp(beta * (final_mu_hat))
+    y_hat = np.exp(beta * final_mu_hat)
     s_hat = np.sum(y_hat)
-    budget = np.sum(d_used_updated).item()
 
-    if PROFILE:
-        true_mu = A@x
-        S = np.sum(np.exp(true_mu - mu_hat.max()))
-        S_hat = np.sum(np.exp(mu_hat - mu_hat.max()))
-        S_error = (S - S_hat) / S
-        profiling_results["denominator error"] = S_error
-        # print("S_error:", S_error)
-        numer_ground_truth = np.exp(true_mu - updated_mu_hat.max())[best_indices.item()]
-        numer_diff = y_hat[best_indices.item()] - numer_ground_truth
-        numer_error = numer_diff / numer_ground_truth
-        profiling_results["numerator error"] = numer_error
-        # print("numerator error:", numer_error)
-        profiling_results["final_budget"] = budget
-
-    # print(d_used_updated)
-    # TODO: Remove last two return values
-    if PROFILE:
-        return best_indices, y_hat / s_hat, budget, profiling_results
-    elif RETURN_STAGE_BUDGETS:
-        return best_indices, y_hat / s_hat, budget, stage_budgets
-    else:
-        return best_indices, y_hat / s_hat, budget
+    return best_indices, y_hat / s_hat, budget
 
 
 if __name__ == "__main__":

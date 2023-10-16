@@ -139,10 +139,7 @@ def get_adaptive_forward(model) -> Callable:
         A = model.lm_head.weight.data.numpy()   # size = (embed, vocab_size)
         x = flattened_states[-1].numpy()
 
-        # TODO: fix return values, ...
-        precompute_mu(A, x)
-
-        _, z, adaptive_budget = ada_softmax(
+        best_arms, z, adaptive_budget = ada_softmax(
             A=A,
             x=x,
             # samples_for_sigma=flattened_states.shape[0],
@@ -151,6 +148,11 @@ def get_adaptive_forward(model) -> Callable:
             verbose=verbose,
         )
         likelihood = torch.tensor(z)
+
+        # FOR DEBUGGING PURPOSES. ERASE WHEN FINISHED
+        print("best arms from adasoftmax: ", best_arms)
+        print("\ngroundtruth best arms: ", np.argmax(A@x))
+
         return likelihood, adaptive_budget
 
     return adaptive_forward
