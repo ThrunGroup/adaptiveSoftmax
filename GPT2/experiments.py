@@ -15,6 +15,7 @@ from gpt_constants import (
     MULTIPLICATIVE_ERROR,
     DELTA_ERROR,
     WIKITEXT_BETA,
+    PRECOMPUTE,
 )
 
 
@@ -144,7 +145,8 @@ def get_adaptive_forward(model) -> Callable:
         _, z, adaptive_budget = ada_softmax(
             A=A,
             x=x,
-            samples_for_sigma=flattened_states.shape[0],
+            # samples_for_sigma=flattened_states.shape[0],
+            samples_for_sigma=None,  # this finds the exact sigma <- debugging purposes
             beta=WIKITEXT_BETA,   # mu is very spiky
             verbose=verbose,
         )

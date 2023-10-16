@@ -1,9 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
-
-# For approximate_mu
 import torch
 
+from hadamard_transform import randomized_hadamard_transform, hadamard_transform
 from numba import njit
 from typing import Tuple, List, Any
 from constants import (
@@ -18,19 +17,22 @@ from constants import (
 )
 
 
-def hadamard_transform(matrix):
-    n = matrix.shape[0]
-    transformed_matrix = np.copy(matrix)
+def hadamard_transform(A, x):
+    d = x.shape[0]
+    dPad = int(2**np.ceil(np.log2(d)))
+    print(f'padded dimension: {dPad}')
+    Apad = np.pad(A,((0,0),(0,dPad-d)),'constant', constant_values=0)
+    xpad = np.pad(x,(0,dPad-d),'constant', constant_values=0)
 
-    # Iterate over the matrix size to perform the Hadamard transform
-    for i in range(int(np.log2(n))):
-        # Create a Hadamard tile of the appropriate size
-        hadamard_tile = np.kron([[1, 1], [1, -1]], np.eye(2 ** i))
-        submatrix_size = n // (2 ** i)
-        transformed_matrix[:submatrix_size, :submatrix_size] = hadamard_tile @ transformed_matrix[:submatrix_size,
-                                                                               :submatrix_size]
+    D = np.diag(np.random.choice([-1,1], size=dPad))
+    A_pad_torch = torch.tensor(Apad)
+    x_pad_torch = torch.tensor(xpad)
+    A_transform = hadamard_transform(A_pad_torch @ D).numpy()
+    x_transform = hadamard_transform(x_pad_torch @ D).numpy()
 
-    return transformed_matrix
+    # for debugging -> checking correctness
+    print("this should be true: ", np.allclose(A@x, A_transform@x_transform))
+    return A_transform, x_transform
 
 
 def precompute_mu(
@@ -361,6 +363,7 @@ def ada_softmax(
     delta: float = DEFAULT_DELTA,
     beta: float = BETA,
     k: int = TOP_K,
+    precompute: bool = PRECOMPUTE,
     verbose: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray, int]:
     """
@@ -375,52 +378,46 @@ def ada_softmax(
     :param samples_for_sigma: Number of samples to allocate on sigma approximation
     :param beta: Beta in the original paper
     :param k: Number of top-k softmax values we want to approximate correctly(parameter for find_topk)
+    :param precompute: Whether we should precompute the "heavy hitters" i.e. columns of j with large variance
     :param verbose: Indicator for verbosity
 
     :return: top-k indices, estimation of softmax value across all indices, and total number of sampled used.
     """
     # precompute the "heavy hitters" and get mask for the rest
-    mu_precomputed, heavy_hitters, num_outliers = precompute_mu(A=A, x=x)
-    subset_mask = np.ones(x.shape[0])
-    subset_mask[heavy_hitters] = 0
-    subset_mask = subset_mask.astype(np.bool_)
-    A_subset = hadamard_transform(A[:, subset_mask])    # dimensions should maintain the same
-    x_subset = x[subset_mask]
+    # NOTE: this reduces the variance for the other points centered around the mean
+    n_heavy, mu_precomputed = 0, 0
+    if precompute:
+        mu_precomputed, heavy_hitters, n_heavy = precompute_mu(A=A, x=x)
+        subset_mask = np.ones(x.shape[0])
+        subset_mask[heavy_hitters] = 0
+        subset_mask = subset_mask.astype(np.bool_)
+        A = A[:, subset_mask]
+        x = x[subset_mask]
 
-    # this is so we get the exact sigma <- for debugging purposes
-    samples_for_sigma = None
     sigma = approx_sigma(
-        A=A_subset,
-        x=x_subset,
+        A=A,
+        x=x,
         num_samples=samples_for_sigma,
         verbose=True
     )
 
     # Algorithm 1 in the paper
     mu_hat, d_used = estimate_mu_hat(
-        atoms=A_subset,
-        query=x_subset,
-        epsilon=epsilon / 2,
-        delta=delta / 3,
+        atoms=A,
+        query=x,
+        epsilon=epsilon,
+        delta=delta,
         sigma=sigma,
         beta=beta,
         verbose=verbose,
     )
-    mu_hat = (d_used * mu_hat + num_outliers * mu_precomputed) / (d_used + num_outliers)
 
-    if PROFILE:
-        profiling_results["sigma"] = sigma
-        profiling_results["denom budget"] = np.sum(d_used).item()
-
-    if RETURN_STAGE_BUDGETS:
-        stage_budgets = dict()
-        stage_budgets["denom budget"] = np.sum(d_used).item()
-
+    mu_hat = (d_used * mu_hat + n_heavy * mu_precomputed) / (d_used + n_heavy)
     best_indices, updated_mu_hat, d_used_updated = find_topk_arms(
-        atoms=A_subset,
-        query=x_subset,
+        atoms=A,
+        query=x,
         sigma=sigma,
-        delta=delta / 3,
+        delta=delta,
         mu_approx=mu_hat,
         d_used=d_used,
         batch_size=BATCH_SIZE,
