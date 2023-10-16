@@ -20,9 +20,15 @@ from constants import (
 def precompute_mu(
     A: np.ndarray,
     x: np.ndarray,
-):
-    num_arms = A.shape[0]
-    outlier_frequency = np.zeros(num_arms)
+) -> [np.ndarray, np.ndarray]:
+    """
+    :param A: matrix A in the paper
+    :param x: vector x in the paper
+
+    :returns: precomputed mu, indices with top-10 bias frequency
+    """
+    num_arms, dim = A.shape
+    outlier_frequency = np.zeros(dim)
 
     # TODO: Seems like a bad practice to define function in a function. Better way?
     def find_outliers(A_row):
@@ -40,29 +46,35 @@ def precompute_mu(
         elmul = A_row * x
         num_bins = int(dim ** 0.5)
 
-        freq, edges = np.histogram(elmul[i], bins=num_bins)
+        freq, edges = np.histogram(elmul, bins=num_bins)
 
         # This is the bin centered around the mean
         most_frequent_bin_index = np.argmax(np.array(freq))
         lower_bound = edges[most_frequent_bin_index]
         upper_bound = edges[most_frequent_bin_index + 1]
 
-        outlier_indicator = np.logical_or(elmul[i] <= lower_bound, elmul[i] >= upper_bound)
+        outlier_indicator = np.logical_or(elmul <= lower_bound, elmul >= upper_bound)
         outlier_indices = np.nonzero(outlier_indicator)[0]
 
         outlier_frequency[outlier_indices] += 1
 
-    np.apply_along_axis(find_outliers, axis=1, arr=A)
+    # TODO: Might want to randomly sample arms instead of slicing
+    np.apply_along_axis(find_outliers, axis=1, arr=A[:10000])
 
 
     # For profiling purpose
-    top_5_outlier_indices = torch.topk(torch.from_numpy(outlier_frequency), 5).indices
+    top_10_outlier_indices = np.array(torch.topk(torch.from_numpy(outlier_frequency), 10).indices)
 
     print("top-5 frequent outliers and frequency")
-    for i in range(5):
-        outlier_index = top_5_outlier_indices[i]
+    for i in range(10):
+        outlier_index = top_10_outlier_indices[i]
         print("column index j:", outlier_index)
         print("frequency:", outlier_frequency[outlier_index])
+
+    # sample the outlier indices
+    mu_precompute = (dim / 10) * A[:, top_10_outlier_indices] @ x[top_10_outlier_indices]
+
+    return mu_precompute, top_10_outlier_indices
 
 
     # TODO: find the j's that correspond to the outlier nonzero bins
@@ -387,7 +399,15 @@ def ada_softmax(
 
     :return: top-k indices, estimation of softmax value across all indices, and total number of sampled used.
     """
-    sigma = approx_sigma(A=A, x=x, num_samples=None, verbose=True)
+    mu_precomputed, outlier_indices = precompute_mu(A=A,
+                                                    x=x)
+
+    # construct indices for sigma
+    indices_for_sigma_calculation = np.ones(x.shape[0])
+    indices_for_sigma_calculation[outlier_indices] = 0
+    indices_for_sigma_calculation = indices_for_sigma_calculation.astype(np.bool_)
+
+    sigma = approx_sigma(A=A[:, indices_for_sigma_calculation], x=x[indices_for_sigma_calculation], num_samples=None, verbose=True)
     if PROFILE:
         mu_hat, d_used, profiling_results = estimate_mu_hat(
             atoms=A,
@@ -408,6 +428,9 @@ def ada_softmax(
             beta=beta,
             verbose=verbose,
         )
+
+    # incorporate precomputed mu into mu_hat
+    mu_hat = (d_used * mu_hat + 10 * mu_precomputed) / (d_used + 10)
 
     if PROFILE:
         profiling_results["sigma"] = sigma
