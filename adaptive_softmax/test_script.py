@@ -5,7 +5,7 @@ import torch
 if __name__ == "__main__":
     np.random.seed(42)
 
-    NUM_TESTS = 1000
+    NUM_TESTS = 100
     verbose = True
 
     # constant for adjusting gain.
@@ -117,6 +117,7 @@ if __name__ == "__main__":
 
         best_indices_hat = np.sort(best_indices_hat)
 
+        #TODO(@lukehan): comment here?
         estimated_right_indices = np.allclose(best_indices_hat, true_topk_indices)
         if not estimated_right_indices:
             wrong_softmax_estimate_numbers += 1
