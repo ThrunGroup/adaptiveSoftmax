@@ -2,24 +2,167 @@ import numpy as np
 from adasoftmax import ada_softmax, estimate_mu_hat, find_topk_arms, approx_sigma
 import torch
 
+NUM_TESTS = 100
+verbose = True
+
+# constant for adjusting gain.
+c = 5
+# matrix, vector size
+n = 10
+d = int(3e+4)
+
+# adaptive algorithm hyperparameters
+beta = 1
+epsilon = 0.1
+delta = 0.01
+num_sigma_samples = d
+k = 1
+
+def normalization_estimation_test(
+        true_mu: np.ndarray,
+        A: np.ndarray,
+        x: np.ndarray,
+        sigma: float,
+) -> [float, bool, int]:
+    """
+    Tests the correctness of normalization constant(referred as S below) estimation.
+    Specifically, this function tests if the approximation from the normalization constant estimation algorithm
+    is within the multiplicative error of epsilon / 2 (Refer to the paper for this number).
+    Note that the test on delta(error probability) by testing on multiple instances
+    would be done outside the function.
+
+    :param true_mu: ground truth mu
+    :param A: matrix A in the paper(A@x == true_mu)
+    :param x: vector x in the paper(A@x == true_mu)
+    :param sigma: sigma in the paper(std of the arm pull)
+    :return: multiplicative error of the estimation, indicator for the correctness, budget for normalization estimation
+    """
+    # Calculate ground truth for normalization constant
+    true_S = np.sum(np.exp(beta * true_mu))
+
+    # Estimate the normalization constant using the algorithm
+    mu_hat_norm, budget_vec_norm, _ = estimate_mu_hat(atoms=A,
+                                                      query=x,
+                                                      epsilon=epsilon / 2,
+                                                      delta=delta / 3,
+                                                      sigma=sigma,
+                                                      beta=beta,
+                                                      )
+    S_estimate = np.sum(np.exp(beta * mu_hat_norm))
+
+    S_error = np.abs(S_estimate - true_S) / true_S
+    is_correct = S_error <= epsilon / 2  # Refer to algorithm 2, Line 3 in original paper for epsilon bound
+    normalization_estimation_budget = np.sum(budget_vec_norm).item()
+
+    return S_error, is_correct, normalization_estimation_budget
+
+def topk_identification_test(
+    true_mu: np.ndarray,
+    A: np.ndarray,
+    x: np.ndarray,
+    sigma: float,
+)-> [bool, int]:
+    """
+    Tests the correctness of normalization constant(referred as S below) estimation.
+    Specifically, this function tests if the topk-identification successfully identifies the best indices.
+    Note that the test on delta(error probability) by testing on multiple instances
+    would be done outside of this function.
+
+    :param true_mu: ground truth
+    :param A: matrix A in the paper(A@x == true_mu)
+    :param x: vector x in the paper(A@x == true_mu)
+    :param sigma: sigma in the paper(std of the arm pull)
+    :return: indicator for identifying the best indices correctly, and the budget for topk-identification
+    """
+    # Find true top-k indices
+    true_topk_indices_torch = torch.sort(torch.topk(torch.from_numpy(true_mu), k).indices).values
+    true_topk_indices = true_topk_indices_torch.numpy()
+
+    # Calculate mu estimate for find-topk
+    # This vector would be constructed by estimate_softmax_normalization in ada_softmax
+    topk_start_mu_hat = np.array([A[i][0] * x[0] for i in range(n)])
+    topk_start_budget = np.ones(n).astype(np.int64)
+
+    # Estimate the best indices using the algorithm
+    best_indices_topk, _, budget_vec_topk = find_topk_arms(atoms=A,
+                                                           query=x,
+                                                           sigma=sigma,
+                                                           delta=delta / 3,
+                                                           mu_approx=topk_start_mu_hat,
+                                                           d_used=topk_start_budget,
+                                                           k=k,
+                                                           )
+
+    # Test results
+    estimated_right_topk = np.allclose(np.sort(best_indices_topk), true_topk_indices)
+    topk_identification_budget = np.sum(budget_vec_topk).item()
+
+    # Print ground truth and estimate if the algorithm is not correct
+    if not estimated_right_topk:
+        print(true_topk_indices, best_indices_topk)
+
+    return estimated_right_topk, topk_identification_budget
+
+def ada_softmax_test(
+    true_mu: np.ndarray,
+    A: np.ndarray,
+    x: np.ndarray,
+) -> [float, bool, bool, int]:
+    """
+    Tests the correctness of the adaSoftmax algorithm.
+    Specifically, it tests if the adaSoftmax successfully identifies the best indices,
+    and estimates the softmax value for those indices within the multiplicative error of epsilon.
+    Note that the test on delta(error probability) is done outside the function.
+
+    :param true_mu: ground truth mu
+    :param A: matrix A in the paper(A@x == true_mu)
+    :param x: vector x in the paper(A@x == true_mu)
+    :return: multiplicative error of the estimation,
+             indicator for identifying the best indices,
+             indicator for estimating within multiplicative error bound,
+             budget for adaSoftmax
+    """
+    # Calculate ground truth for softmax result
+    S = np.sum(np.exp(beta * true_mu))
+    z = np.exp(beta * true_mu) / S
+
+    # Find true top-k indices
+    true_topk_indices_torch = torch.sort(torch.topk(torch.from_numpy(true_mu), k).indices).values
+    true_topk_indices = true_topk_indices_torch.numpy()
+
+    # Identify the best indices, estimate the softmax value for best indices
+    best_indices_hat, z_hat, adasoftmax_budget = ada_softmax(A=A,
+                                                             x=x,
+                                                             epsilon=epsilon,
+                                                             delta=delta,
+                                                             samples_for_sigma=d,
+                                                             beta=beta,
+                                                             k=k,
+                                                             )
+
+    best_indices_hat = np.sort(best_indices_hat)
+
+    # Test results
+    estimated_right_indices = np.allclose(best_indices_hat, true_topk_indices)
+    z_error = np.abs(z_hat[best_indices_hat] - z[true_topk_indices])
+    empirical_epsilon = np.max(z_error / z[true_topk_indices])
+    within_error_bound = empirical_epsilon <= epsilon
+
+    #Print ground truth, estimate, and related values if the algorithm is not correct
+    if not estimated_right_indices:
+        print(true_topk_indices, best_indices_topk)
+    elif not within_error_bound:
+        print("epsilon:", empirical_epsilon)
+        print(best_indices_hat, true_topk_indices)
+        print(z_hat[best_indices_hat], z[true_topk_indices])
+        print(A @ x)
+        wrong_softmax_estimate_numbers += 1
+
+    return empirical_epsilon, estimated_right_indices, within_error_bound, adasoftmax_budget
+
+
 if __name__ == "__main__":
     np.random.seed(42)
-
-    NUM_TESTS = 100
-    verbose = True
-
-    # constant for adjusting gain.
-    c = 5
-    # matrix, vector size
-    n = 10
-    d = int(3e+4)
-
-    # adaptive algorithm hyperparameters
-    beta = 1
-    epsilon = 0.1
-    delta = 0.01
-    num_sigma_samples = d
-    k = 1
 
     # test result aggregates for softmax normalization estimation
     total_S_error = 0.0
@@ -37,17 +180,9 @@ if __name__ == "__main__":
 
     for i in range(NUM_TESTS):
         # generate ground truth mu randomly
-        """
         true_mu = np.ones(n)
         true_mu = np.random.uniform(1, 100, size=(n,))
         true_mu /= 10
-        """
-        true_mu = np.array([2.84174176, 0.21693943, 4.94935448, 8.54784365, 6.60296774, 0.25694716,
-                            0.1692839, 8.39057803, 8.22458089, 8.52506058])
-
-        # find true top-k indices
-        true_topk_indices_torch = torch.sort(torch.topk(torch.from_numpy(true_mu), k).indices).values
-        true_topk_indices = true_topk_indices_torch.numpy()
 
         # construct A and x that satisfies A@x = true_mu
         x = np.random.uniform(low=0.94, high=1, size=d)
@@ -56,8 +191,6 @@ if __name__ == "__main__":
         A = A - np.outer(A @ x - true_mu, np.ones(d) / np.sum(x))
 
         # calculate ground truth for S and z
-        S = np.sum(np.exp(beta * true_mu))
-        z = np.exp(beta * true_mu) / S
 
         if verbose:
             print(f"running {i+1}th test")
@@ -67,72 +200,42 @@ if __name__ == "__main__":
 
 
         # normalization constant estimation test
-        mu_hat_norm, budget_vec_norm, profiling_results = estimate_mu_hat(atoms=A,
-                                                       query=x,
-                                                       epsilon=epsilon/2,
-                                                       delta=delta/3,
-                                                       sigma=sigma,
-                                                       beta=beta,
-                                                       )
-        S_hat = np.sum(np.exp(beta * mu_hat_norm))
-        # print(np.exp(mu_hat_norm))
-        # print(np.exp(beta * true_mu))
-        S_error = np.abs(S_hat - S) / S
-        total_S_error += S_error
-        # Refer to algorithm 2, Line 3 in original paper for epsilon bound on normalization constant estimation
-        if S_error > epsilon/2:
-            wrong_S_estimate_numbers += 1
-        total_estimate_normalization_budget += np.sum(budget_vec_norm).item()
+        S_error, S_within_bound, normalization_estimation_budget = normalization_estimation_test(true_mu=true_mu,
+                                                                                                 A=A,
+                                                                                                 x=x,
+                                                                                                 sigma=sigma,
+                                                                                                 )
 
-        # calculate mu estimate for find-topk
-        # This vector would be constructed by estimate_softmax_normalization in ada_softmax
-        topk_start_mu_hat = np.array([A[i][0]*x[0] for i in range(n)])
-        topk_start_budget = np.ones(n).astype(np.int64)
+        # Aggregate test result
+        total_S_error += S_error
+        if not S_within_bound:
+            wrong_S_estimate_numbers += 1
+        total_estimate_normalization_budget += normalization_estimation_budget
 
         # top-k indices identification test
-        best_indices_topk, _, budget_vec_topk = find_topk_arms(atoms=A,
-                                                               query=x,
-                                                               sigma=sigma,
-                                                               delta=delta/3,
-                                                               mu_approx=topk_start_mu_hat,
-                                                               d_used=topk_start_budget,
-                                                               k=k,
-                                                               )
-        estimated_right_topk = np.allclose(np.sort(best_indices_topk), true_topk_indices)
+        estimated_right_topk, topk_budget = topk_identification_test(true_mu=true_mu,
+                                                                     A=A,
+                                                                     x=x,
+                                                                     sigma=sigma,
+                                                                     )
+
         if not estimated_right_topk:
             wrong_topk_numbers += 1
-            print(best_indices_topk, true_topk_indices, true_mu)
         else:
-            total_topk_budget += np.sum(budget_vec_topk).item()
+            total_topk_budget += topk_budget
 
         # softmax estimation test
-        best_indices_hat, z_hat, adasoftmax_budget = ada_softmax(A=A,
-                                                                 x=x,
-                                                                 epsilon=epsilon,
-                                                                 delta=delta,
-                                                                 samples_for_sigma=d,
-                                                                 beta=beta,
-                                                                 k=k,
-                                                                 )
+        empirical_epsilon, estimated_right_indices, within_error_bound, budget = ada_softmax_test(true_mu=true_mu,
+                                                                                                  A=A,
+                                                                                                  x=x,
+                                                                                                  )
 
-        best_indices_hat = np.sort(best_indices_hat)
-
-        #TODO(@lukehan): comment here?
-        estimated_right_indices = np.allclose(best_indices_hat, true_topk_indices)
-        if not estimated_right_indices:
-            wrong_softmax_estimate_numbers += 1
+        # Aggregate test results
+        if estimated_right_indices and within_error_bound:
+            total_softmax_error += empirical_epsilon
+            total_softmax_budget += budget
         else:
-            z_error = np.abs(z_hat[best_indices_hat] - z[true_topk_indices])
-            empirical_epsilon = np.max(z_error / z[true_topk_indices])
-            if empirical_epsilon > epsilon:
-                print("epsilon:", empirical_epsilon)
-                print(best_indices_hat, true_topk_indices)
-                print(z_hat[best_indices_hat], z[true_topk_indices])
-                print(A@x)
-                wrong_softmax_estimate_numbers += 1
-            else:
-                total_softmax_error += empirical_epsilon
-                total_softmax_budget += adasoftmax_budget
+            wrong_softmax_estimate_numbers += 1
 
     average_S_error = total_S_error / NUM_TESTS
     average_softmax_error = total_softmax_error / NUM_TESTS
