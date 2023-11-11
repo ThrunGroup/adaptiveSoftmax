@@ -19,10 +19,10 @@ num_sigma_samples = d
 k = 1
 
 def normalization_estimation_test(
-        true_mu: np.ndarray,
-        A: np.ndarray,
-        x: np.ndarray,
-        sigma: float,
+    true_mu: np.ndarray,
+    A: np.ndarray,
+    x: np.ndarray,
+    sigma: float,
 ) -> [float, bool, int]:
     """
     Tests the correctness of normalization constant(referred as S below) estimation.
@@ -41,13 +41,14 @@ def normalization_estimation_test(
     true_S = np.sum(np.exp(beta * true_mu))
 
     # Estimate the normalization constant using the algorithm
-    mu_hat_norm, budget_vec_norm, _ = estimate_mu_hat(atoms=A,
-                                                      query=x,
-                                                      epsilon=epsilon / 2,
-                                                      delta=delta / 3,
-                                                      sigma=sigma,
-                                                      beta=beta,
-                                                      )
+    mu_hat_norm, budget_vec_norm, _ = estimate_mu_hat(
+        atoms=A,
+        query=x,
+        epsilon=epsilon / 2,
+        delta=delta / 3,
+        sigma=sigma,
+        beta=beta,
+    )
     S_estimate = np.sum(np.exp(beta * mu_hat_norm))
 
     S_error = np.abs(S_estimate - true_S) / true_S
@@ -84,14 +85,15 @@ def topk_identification_test(
     topk_start_budget = np.ones(n).astype(np.int64)
 
     # Estimate the best indices using the algorithm
-    best_indices_topk, _, budget_vec_topk = find_topk_arms(atoms=A,
-                                                           query=x,
-                                                           sigma=sigma,
-                                                           delta=delta / 3,
-                                                           mu_approx=topk_start_mu_hat,
-                                                           d_used=topk_start_budget,
-                                                           k=k,
-                                                           )
+    best_indices_topk, _, budget_vec_topk = find_topk_arms(
+        atoms=A,
+        query=x,
+        sigma=sigma,
+        delta=delta / 3,
+        mu_approx=topk_start_mu_hat,
+        d_used=topk_start_budget,
+        k=k,
+    )
 
     # Test results
     estimated_right_topk = np.allclose(np.sort(best_indices_topk), true_topk_indices)
@@ -131,14 +133,15 @@ def ada_softmax_test(
     true_topk_indices = true_topk_indices_torch.numpy()
 
     # Identify the best indices, estimate the softmax value for best indices
-    best_indices_hat, z_hat, adasoftmax_budget = ada_softmax(A=A,
-                                                             x=x,
-                                                             epsilon=epsilon,
-                                                             delta=delta,
-                                                             samples_for_sigma=d,
-                                                             beta=beta,
-                                                             k=k,
-                                                             )
+    best_indices_hat, z_hat, adasoftmax_budget = ada_softmax(
+        A=A,
+        x=x,
+        epsilon=epsilon,
+        delta=delta,
+        samples_for_sigma=d,
+        beta=beta,
+        k=k,
+    )
 
     best_indices_hat = np.sort(best_indices_hat)
 
