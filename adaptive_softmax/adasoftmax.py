@@ -15,6 +15,7 @@ from constants import (
     RETURN_STAGE_BUDGETS,
     DEFAULT_EPSILON,
     DEFAULT_DELTA,
+    DEBUG,
 )
 
 
@@ -143,6 +144,9 @@ def estimate_mu_hat(
     epsilon: float,
     delta: float,
     sigma: float,
+    original_dim: int = 0,
+    mu_precomputed: np.ndarray = None,
+    n_heavy: int = 0,
     beta: float = BETA,
     verbose: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray, Any]:
@@ -172,6 +176,10 @@ def estimate_mu_hat(
 
     n = atoms.shape[0]
     d = query.shape[0]
+
+    # TODO(@lukehan): This is for test code, is there a better way?
+    if mu_precomputed is None:
+        mu_precomputed = np.zeros(n)
 
     # Phase 1: Uniform Sampling to construct alpha and gamma
     # Alpha and gamma would later be normalized to obtain sampling proportion for adaptive sampling
@@ -205,10 +213,15 @@ def estimate_mu_hat(
 
     # compute variables for lines 2-5 of Algorithm 1
     mu_hat = (atoms[:, :T0] @ query[:T0]) * (d / T0)  # scale to get unbiased estimator
+    mu_hat_actual = None
+    if PRECOMPUTE:
+        mu_hat_actual = ((original_dim * T0 / d) * mu_hat + n_heavy * mu_precomputed) / (T0 + n_heavy)
+    else:
+        mu_hat_actual = mu_hat
     c_interval = np.sqrt(
         2 * sigma ** 2 * np.log(6 * n / delta) / T0
     )
-    exp = beta * (mu_hat - c_interval)
+    exp = beta * (mu_hat_actual - c_interval)
     normalized_exp = exp - np.max(exp)  # logsum trick for numerical stability
     alpha_numer = np.exp(normalized_exp)
     gamma_numer = np.exp(normalized_exp / 2)
@@ -282,6 +295,9 @@ def find_topk_arms(
     delta: float,
     mu_approx: np.ndarray,
     d_used: np.ndarray,
+    original_dim: int = 0,
+    mu_precomputed: np.ndarray = None,
+    n_heavy: int = 0,
     batch_size: int = BATCH_SIZE,
     k: int = TOP_K,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -302,6 +318,10 @@ def find_topk_arms(
     dim = len(query)
     n_atoms = len(atoms)
 
+    # TODO(@lukehan): This is for test code, is there a better way?
+    if mu_precomputed is None:
+        mu_precomputed = np.zeros(n_atoms)
+
     # case where no best-arm identification is needed
     if k >= n_atoms:
         return np.arange(n_atoms), mu_approx, d_used
@@ -319,11 +339,18 @@ def find_topk_arms(
         c_interval[d_used == dim] = 0  # set confidence interval to 0 if we have ground truth
 
         # update the mask to get the surviving arm indices
-        max_index = np.argmax(mu_approx)
-        lower_bound = mu_approx[max_index] - c_interval[max_index]
+        mean = None
+        if PRECOMPUTE:
+            mean_numer = mu_approx * (original_dim * d_used / dim) + mu_precomputed * n_heavy
+            mean = mean_numer / (d_used + n_heavy)
+        else:
+            mean = mu_approx
+
+        max_index = np.argmax(mean)
+        lower_bound = mean[max_index] - c_interval[max_index]
         prev_mask = mask.copy()
 
-        surviving = (mu_approx + c_interval) >= lower_bound
+        surviving = (mean + c_interval) >= lower_bound
         mask = mask & surviving
         surviving_arms = np.nonzero(mask)[0]  # get nonzero indices of mask (this is NOT deprecated)
 
@@ -407,6 +434,9 @@ def ada_softmax(
 
     :return: top-k indices, estimation of softmax value across all indices, and total number of sampled used.
     """
+    original_dim = x.shape[0]
+    true_mu = A @ x
+
     # precompute the "heavy hitters" and get mask for the rest
     # NOTE: this reduces the variance for the other points centered around the mean
     n_heavy, mu_precomputed = 0, 0
@@ -425,17 +455,36 @@ def ada_softmax(
         verbose=False
     )
 
+    print("sigma:", sigma)
+
     # Algorithm 1 in the paper. Denominator (i.e. s_hat) estimation
     mu_hat, d_used, profiling_results = estimate_mu_hat(
         atoms=A,
         query=x,
-        epsilon=epsilon,
-        delta=delta,
+        epsilon=epsilon / 2,
+        delta=delta / 3,
         sigma=sigma,
+        original_dim=original_dim,
+        mu_precomputed=mu_precomputed,
+        n_heavy=n_heavy,
         beta=beta,
         verbose=verbose,
     )
-    mu_hat = (d_used * mu_hat + n_heavy * mu_precomputed) / (d_used + n_heavy)
+
+    # mu_hat = (d_used * mu_hat + n_heavy * mu_precomputed) / (d_used + n_heavy)
+
+    """
+    #Test normalization estimation
+    if DEBUG:
+        mu_hat_numer = ((original_dim * d_used / x.shape[0]) * mu_hat + mu_precomputed * n_heavy)
+        mu_hat_prime = mu_hat_numer / (d_used + n_heavy)
+        S_hat = np.sum(np.exp(mu_hat_prime))
+        true_S = np.sum(np.exp(true_mu))
+        error = (S_hat - true_S) / true_S
+        print("budget:", d_used)
+        print("S error:", error)
+        print("True_S:", true_S)
+    """
 
     # Best arm identification for y_hat (i.e. numerator) estimation.
     # NOTE: the additional samples used for this process will also be used to update mu
@@ -443,7 +492,10 @@ def ada_softmax(
         atoms=A,
         query=x,
         sigma=sigma,
-        delta=delta,
+        delta=delta / 3,
+        original_dim=original_dim,
+        mu_precomputed=mu_precomputed,
+        n_heavy=n_heavy,
         mu_approx=mu_hat,
         d_used=d_used,
         batch_size=BATCH_SIZE,
@@ -452,20 +504,26 @@ def ada_softmax(
 
     # Total samples to use for better approximation of the mu of the top k arms.
     # This means we sample n_arm_pull - used_samples more times and update mu accordingly
-    dim_d = x.shape[0]
+    dim = x.shape[0]
     n_arm_pull = int(min(
         np.ceil((288 * sigma ** 2 * beta ** 2 * np.log(6 / delta)) / (epsilon ** 2)),
-        dim_d
+        dim
     ))
     for arm_index in best_indices:
         used_sample = d_used_updated[arm_index]
         if used_sample < n_arm_pull:
-            mu_additional = dim_d * A[arm_index, used_sample: n_arm_pull] @ x[used_sample: n_arm_pull]
+            mu_additional = dim * A[arm_index, used_sample: n_arm_pull] @ x[used_sample: n_arm_pull]
             updated_mu_hat[arm_index] = (updated_mu_hat[arm_index] * used_sample + mu_additional) / n_arm_pull
 
     # compute budget
     d_used_updated[best_indices] = np.maximum(d_used_updated[best_indices], n_arm_pull)
     budget = np.sum(d_used_updated).item()
+
+    # compensate for precomputation
+    if PRECOMPUTE:
+        updated_mu_hat_scaled = updated_mu_hat * (original_dim * d_used_updated / dim)
+        mu_precomputed_scaled = mu_precomputed * n_heavy
+        updated_mu_hat = (updated_mu_hat_scaled + mu_precomputed_scaled) / (d_used_updated + n_heavy)
 
     # Using logsumexp trick for numerical stability
     final_mu_hat = updated_mu_hat - np.max(updated_mu_hat)
