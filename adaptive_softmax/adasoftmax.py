@@ -1,0 +1,538 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import torch
+
+from hadamard_transform import randomized_hadamard_transform, hadamard_transform
+from numba import njit
+from typing import Tuple, List, Any
+from constants import (
+    BATCH_SIZE,
+    TOP_K,
+    BETA,
+    PROFILE,
+    PRECOMPUTE,
+    OPTIMIZE_CONSTANTS,
+    RETURN_STAGE_BUDGETS,
+    DEFAULT_EPSILON,
+    DEFAULT_DELTA,
+    DEBUG,
+)
+
+
+def hadamard_transform(
+        A: np.ndarray,
+        x: np.ndarray
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Takes matrix A and vector x that is to be multiplied,
+    applies hadamard transform to them and returns the result.
+    Note that the shape of A and x would most likely change after applying hadamard transform.
+    Specifically, suppose original size of A and x are (n, d) and (d,), respectively.
+    Then, the shape after applying hadamard transform would be (n, d'), (d',),
+    where d' is the closest power of 2 that is larger than d, as hadamard transform requires
+    the dimension to be power of 2.
+
+    :param A: matrix to be transformed
+    :param x: vector to be transformed
+    :return: Returns input matrix and vector with hadamard transform applied to them.
+    """
+
+    # Zero-pad to increase the dimension to the closest power of 2
+    # This is a requirement of hadamard transform
+    d = x.shape[0]
+    dPad = int(2**np.ceil(np.log2(d)))
+    Apad = np.pad(A,((0,0),(0,dPad-d)),'constant', constant_values=0)
+    xpad = np.pad(x,(0,dPad-d),'constant', constant_values=0)
+
+    # Apply hadamard transform using Pytorch library
+    D = np.diag(np.random.choice([-1,1], size=dPad))
+    A_pad_torch = torch.tensor(Apad)
+    x_pad_torch = torch.tensor(xpad)
+    A_transform = hadamard_transform(A_pad_torch @ D).numpy()
+    x_transform = hadamard_transform(x_pad_torch @ D).numpy()
+
+    # for debugging -> checking correctness
+    print("this should be true: ", np.allclose(A@x, A_transform@x_transform))
+    return A_transform, x_transform
+
+
+def precompute_mu(
+    A: np.ndarray,
+    x: np.ndarray,
+    verbose: bool = False
+) -> Tuple[np.ndarray, np.ndarray, int]:
+    """
+    Identify outlier columns, and precompute the matrix-vector multiplication result
+    for the outlier columns(i.e. pre-pull each arm as if we randomly selected outlier columns).
+    This is to ignore the outliers in the later random sampling procedure to reduce variance.
+
+    :param A: matrix A in the paper
+    :param x: vector x in the paper
+
+    :returns: precomputed mu, outlier's indices, number of outliers
+    """
+    num_arms, dim = A.shape
+
+    # calculate the frequency that each column is classified as outlier in each arm
+    # Currently the criteria for the outlier is 1std bound(mean - std < val < mean + std).
+    elems = A * x
+    mu = elems.mean(axis=1)
+    stds = elems.std(axis=1)
+    devs = np.abs(elems - mu.reshape(-1, 1)) / stds.reshape(-1, 1)
+    numDevs = (devs > 1).sum(axis=0)
+
+    # get indices of columns that is classified as outliers on more than half of the arms
+    top_outlier_indices = np.nonzero(numDevs >= int(num_arms / 2))[0]
+    num_outliers = top_outlier_indices.shape[0]
+
+    # For profiling purpose
+    if verbose:
+        print("number of outliers:", num_outliers)
+
+    # precompute for the outlier indices
+    mu_precompute = (dim / num_outliers) * A[:, top_outlier_indices] @ x[top_outlier_indices]
+
+    return mu_precompute, top_outlier_indices, num_outliers
+
+
+def approx_sigma(
+    A: np.ndarray,
+    x: np.ndarray,
+    num_samples: Any,
+    verbose: bool = False,
+) -> float:
+    """
+    Function to approximate sigma more rigorously. We return the median of the std for the estimation
+    (i.e. arm pull) across all arms. But, for now, we assume sigma is passed in as a parameter
+
+    :param A: Matrix A in the original paper
+    :param x: Vector x in the original paper
+    :param num_samples: number of samples to use for approximating sigma
+
+    :returns: the sigma approximation
+    """
+    n_arms, dim = A.shape
+
+    # Calculate true sigma unless number of samples to use is explicitly given
+    if num_samples is None:
+        num_samples = dim
+
+    elmul = A * x
+    sigma = np.std(elmul, axis=1)
+
+    # we need to find index explicitly for debugging purposes
+    median_i = np.argsort(sigma)[len(sigma) // 2]
+    scaled_sigma = dim * sigma[median_i]
+
+    if verbose:
+        num_bins = int(dim ** 0.5)
+        freq, edges, _ = plt.hist(elmul[median_i], bins=num_bins)
+
+        # TODO: find the j's that correspond to the outlier nonzero bins
+        print(f"dimensions are {n_arms, dim}\n")
+        print(f"num bins {num_bins}\n")
+        print(f"freq in bins: {freq}\n")
+        print(f"bin edges: {edges}\n")
+        print(f"scaled sigma is: {scaled_sigma}\n")
+
+    return scaled_sigma
+
+
+def estimate_mu_hat(
+    atoms: np.ndarray,
+    query: np.ndarray,
+    epsilon: float,
+    delta: float,
+    sigma: float,
+    original_dim: int = 0,
+    mu_precomputed: np.ndarray = None,
+    n_heavy: int = 0,
+    beta: float = BETA,
+    verbose: bool = False,
+) -> Tuple[np.ndarray, np.ndarray, Any]:
+    """
+    This is Algorithm 1 from the paper (adaApprox).
+    For numerical stability, we approximate the normalization constant "S" after finding the numerator term of
+    the softmax. This function instead returns the mu_hat that will be used to find the normalization constant.
+
+    :param atoms: Matrix A in the original paper
+    :param query: Vector x in the original paper
+    :param epsilon: bound on the multiplicative error of estimation for S
+    :param delta: probability of failure of estimation for S
+    :param sigma: sub-gaussianity parameter for the arm pull across all arms
+    :param beta: beta in the original paper
+
+    :returns: the approximation for mu_hat
+    """
+
+    c_empirical_t0 = 1
+    c_empirical_t2 = 1
+    c_empirical_t3 = 1
+
+    if OPTIMIZE_CONSTANTS:
+        c_empirical_t0 = 0.15
+        c_empirical_t2 = 4e-2
+        c_empirical_t3 = 1e-3
+
+    n = atoms.shape[0]
+    d = query.shape[0]
+
+    # TODO(@lukehan): This is for test code, is there a better way?
+    if mu_precomputed is None:
+        mu_precomputed = np.zeros(n)
+
+    # Phase 1: Uniform Sampling to construct alpha and gamma
+    # Alpha and gamma would later be normalized to obtain sampling proportion for adaptive sampling
+
+    # Calculate uniform sampling
+    T0_original = c_empirical_t0 * 17 * beta ** 2 * sigma ** 2 * np.log(6 * n / delta)
+    T0 = int(np.ceil(
+            min(
+                # theoretical complexity
+                T0_original,
+                d
+            )
+    ).item())
+
+    # Do exact computation if theoretical complexity isn't less than dimension d
+    if T0 >= d:
+        mu = (atoms @ query).astype(np.float64)
+
+        if verbose:
+            true_mu = atoms @ query
+            first_order_error = np.sum(np.exp(beta * mu) * beta * (true_mu - mu))
+            second_order_error = np.sum(np.exp(beta * mu) * beta**2 * (true_mu - mu)**2)
+            print("Exact computation because T0 > d")
+            print("T0 was:", T0_original)
+            print("first order error:", first_order_error)
+            print("second order error:", second_order_error)
+
+        return mu, d * np.ones(n).astype(np.int64)
+
+    # Phase 2: adaptive sampling
+
+    # compute variables for lines 2-5 of Algorithm 1
+    mu_hat = (atoms[:, :T0] @ query[:T0]) * (d / T0)  # scale to get unbiased estimator
+    mu_hat_actual = None
+    if PRECOMPUTE:
+        mu_hat_actual = ((original_dim * T0 / d) * mu_hat + n_heavy * mu_precomputed) / (T0 + n_heavy)
+    else:
+        mu_hat_actual = mu_hat
+    c_interval = np.sqrt(
+        2 * sigma ** 2 * np.log(6 * n / delta) / T0
+    )
+    exp = beta * (mu_hat_actual - c_interval)
+    normalized_exp = exp - np.max(exp)  # logsum trick for numerical stability
+    alpha_numer = np.exp(normalized_exp)
+    gamma_numer = np.exp(normalized_exp / 2)
+
+    # Determine the number of total samples to use for each arm.
+    log_term = np.log((6 * n) / delta)
+    term1 = c_empirical_t0 * 17 * log_term
+    term2 = 16 * (2 ** 0.5) * log_term * np.sum(gamma_numer) * gamma_numer / (epsilon * np.sum(alpha_numer))
+    term2 *= c_empirical_t2
+    term3 = (16 * np.log(12 / delta)) * alpha_numer / ((epsilon ** 2) * np.sum(alpha_numer))
+    term3 *= c_empirical_t3
+    n_samples = np.maximum(np.maximum(term1, term2), term3).astype(np.int64)
+    n_samples = np.ceil(
+        np.minimum(beta**2 * sigma**2 * n_samples, d)
+    ).astype(np.int64)
+
+    # one-time sampling for each arm with the budget computed above
+    updated_mu_hat = np.empty(n)
+    for i in range(n):
+
+        # Exact computation for the case where estimated budget is higher than dimension
+        if n_samples[i] >= d:
+            updated_mu_hat[i] = atoms[i] @ query
+        else:
+            # Note that we're only taking an extra n_samples - T0 samples to update mu
+            # This is analogous to the case where among n_samples that have been drawn,
+            # T0 samples are duplicates.
+            mu_approx = atoms[i, T0:n_samples[i]] @ query[T0:n_samples[i]] * d
+            updated_mu_hat[i] = (mu_hat[i] * T0 + mu_approx) / max(n_samples[i], 1)
+
+    if PROFILE:
+        import torch
+
+        true_mu = atoms @ query
+        normalized_true_mu = true_mu - true_mu.max()
+
+        true_gamma_numer = np.exp((beta * normalized_true_mu) / 2)
+        true_gamma = true_gamma_numer / np.sum(true_gamma_numer)
+        gamma = gamma_numer / np.sum(gamma_numer)
+        gamma_error = gamma / true_gamma
+
+        true_alpha_numer = np.exp(beta * normalized_true_mu)
+        true_alpha = true_alpha_numer / np.sum(true_alpha_numer)
+        alpha = alpha_numer / np.sum(alpha_numer)
+        alpha_error = alpha / true_alpha
+
+
+        first_order_error = np.sum(np.exp(beta * updated_mu_hat) * (beta * (true_mu - updated_mu_hat)))
+        second_order_error = np.sum(np.exp(updated_mu_hat) * (beta**2 * (true_mu - updated_mu_hat)**2))
+
+        profiling_results = dict()
+        profiling_results["gamma_error"] = torch.topk(torch.from_numpy(gamma_error), 2).values
+        profiling_results["alpha_error"] = -1 * torch.topk(torch.from_numpy(-1 * alpha_error), 2).values
+        profiling_results["T0"] = T0
+        profiling_results["top-2 T2"] = torch.topk(torch.from_numpy(np.ceil(term2 * beta ** 2 * sigma ** 2)), 2).values.detach().numpy()
+        profiling_results["top-2 T3"] = torch.topk(torch.from_numpy(np.ceil(term3 * beta ** 2 * sigma ** 2)), 2).values.detach().numpy()
+        profiling_results["first_order_error"] = first_order_error / np.sum(np.exp(beta * true_mu))
+        profiling_results["second_order_error"] = second_order_error / np.sum(np.exp(beta * true_mu))
+
+    # TODO(@lukehan): Make return type static, and make any necessary changes to the code that use this function
+    if PROFILE:
+        return updated_mu_hat, n_samples, profiling_results
+    else:
+        return updated_mu_hat, n_samples, None
+
+
+def find_topk_arms(
+    atoms: np.ndarray,
+    query: np.ndarray,
+    sigma: float,
+    delta: float,
+    mu_approx: np.ndarray,
+    d_used: np.ndarray,
+    original_dim: int = 0,
+    mu_precomputed: np.ndarray = None,
+    n_heavy: int = 0,
+    batch_size: int = BATCH_SIZE,
+    k: int = TOP_K,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Function to identify the indices of the top k softmax values
+
+    :param atoms: the matrix A in original paper
+    :param query: the vector x in original paper
+    :param sigma: sub-gaussianity parameter for an arm pull across all arms
+    :param delta: probability of being incorrect
+    :param mu_approx: mu obtained from the one-time sampling
+    :param d_used: number of arm pulls per arm used in the one-time sampling
+    :param batch_size: the batch size for each round of UCB & successive elimination
+    :param k: the number of indices we want to identify
+
+    :return: top_k indices, mu, number of samples used on each arm
+    """
+    dim = len(query)
+    n_atoms = len(atoms)
+
+    # TODO(@lukehan): This is for test code, is there a better way?
+    if mu_precomputed is None:
+        mu_precomputed = np.zeros(n_atoms)
+
+    # case where no best-arm identification is needed
+    if k >= n_atoms:
+        return np.arange(n_atoms), mu_approx, d_used
+
+    # initialize variables
+    num_found = 0
+    best_ind = np.empty(n_atoms, dtype=np.int64)
+    mask = np.ones(n_atoms, dtype='bool')   # initially all candidates are valid
+
+    # Run successive elimination to estimate mu_hat by sampling WITHOUT replacement
+    terminated = False
+    while not terminated:
+        numer = 2 * np.log(4 * n_atoms * d_used ** 2 / delta)  # mean estimate in general best-arm identification
+        c_interval = sigma * np.sqrt(numer / (d_used + 1))  # confidence interval
+        c_interval[d_used == dim] = 0  # set confidence interval to 0 if we have ground truth
+
+        # update the mask to get the surviving arm indices
+        mean = None
+        if PRECOMPUTE:
+            mean_numer = mu_approx * (original_dim * d_used / dim) + mu_precomputed * n_heavy
+            mean = mean_numer / (d_used + n_heavy)
+        else:
+            mean = mu_approx
+
+        max_index = np.argmax(mean)
+        lower_bound = mean[max_index] - c_interval[max_index]
+        prev_mask = mask.copy()
+
+        surviving = (mean + c_interval) >= lower_bound
+        mask = mask & surviving
+        surviving_arms = np.nonzero(mask)[0]  # get nonzero indices of mask (this is NOT deprecated)
+
+        # revive previously eliminated arms if we have less than k surviving arms
+        if len(surviving_arms) <= k - num_found:
+            best_ind[:len(surviving_arms)] = surviving_arms
+            num_found += len(surviving_arms)
+
+            # We want to revive only the candidates that have been removed from current rounds
+            # this means we want to set surviving_arms to true only when current mask is False,
+            # and previous mask is True, and every other mask should be False.
+            # XOR operation gives the desired result, hence we're using XOR.
+            mask = np.logical_xor(prev_mask, mask)  # revive candidates eliminated at current round
+            surviving_arms = np.nonzero(mask)[0]
+
+        compute_exactly = np.max(d_used[surviving_arms]) > (dim - batch_size)
+        if compute_exactly or num_found >= k:
+            # NOTE: we're not using the terminated variable
+            terminated = True
+            break
+
+        # update mu approximation with more samples
+        sampled_mu_approx = np.empty(np.sum(mask))
+        for i, atom_index in enumerate(surviving_arms):
+            samples_used = d_used[atom_index]
+            v1 = atoms[atom_index, samples_used: samples_used + batch_size]
+            v2 = query[samples_used: samples_used + batch_size]
+            sampled_mu_approx[i] = v1 @ v2
+
+        # we need to scale the mu approximation accordingly
+        numer = mu_approx[surviving_arms] * d_used[mask] + sampled_mu_approx * dim
+        mu_approx[surviving_arms] = numer / (d_used[mask] + batch_size)
+        d_used[mask] += batch_size
+
+    # Brute force computation for the remaining candidates
+    if compute_exactly:
+        curr_mu = d_used * mu_approx
+        for i, atom_index in enumerate(surviving_arms):
+            used = d_used[atom_index]
+            if used < dim:
+                curr_mu[atom_index] += atoms[atom_index, used:] @ query[used:] * dim
+
+        d_used[surviving_arms] = dim
+        mu_approx = curr_mu / d_used  # to maintain consistent naming
+        mu_exact_search = curr_mu.copy()
+
+        while num_found < k:
+            best_index = np.argmax(mu_exact_search)
+            best_ind[num_found] = best_index
+            num_found += 1
+            mu_exact_search[best_index] = -np.inf
+
+    return best_ind[:k], mu_approx, d_used
+
+
+def ada_softmax(
+    A: np.ndarray,
+    x: np.ndarray,
+    samples_for_sigma: int,
+    epsilon: float = DEFAULT_EPSILON,
+    delta: float = DEFAULT_DELTA,
+    beta: float = BETA,
+    k: int = TOP_K,
+    precompute: bool = PRECOMPUTE,
+    verbose: bool = False,
+) -> Tuple[np.ndarray, np.ndarray, int]:
+    """
+    This is Algorithm 2 from the paper.
+    This calls approx_sigma_bound to get an approximation on sigma, the sub-gaussian parameter in the original paper.
+    The estimation on S is obtained here. Additional samples may be used for the precise estimation for the best k arms.
+
+    :param A: Matrix A in the original paper
+    :param x: Vector x in the original paper
+    :param epsilon: Multiplicative error bound for softmax value estimation
+    :param delta: Probability of failure for softmax value estimation
+    :param samples_for_sigma: Number of samples to allocate on sigma approximation
+    :param beta: Beta in the original paper
+    :param k: Number of top-k softmax values we want to approximate correctly(parameter for find_topk)
+    :param precompute: Whether we should precompute the "heavy hitters" i.e. columns of j with large variance
+    :param verbose: Indicator for verbosity
+
+    :return: top-k indices, estimation of softmax value across all indices, and total number of sampled used.
+    """
+    original_dim = x.shape[0]
+    true_mu = A @ x
+
+    # precompute the "heavy hitters" and get mask for the rest
+    # NOTE: this reduces the variance for the other points centered around the mean
+    n_heavy, mu_precomputed = 0, 0
+    if precompute:
+        mu_precomputed, heavy_hitters, n_heavy = precompute_mu(A=A, x=x)
+        subset_mask = np.ones(x.shape[0])
+        subset_mask[heavy_hitters] = 0
+        subset_mask = subset_mask.astype(np.bool_)
+        A = A[:, subset_mask]
+        x = x[subset_mask]
+
+    sigma = approx_sigma(
+        A=A,
+        x=x,
+        num_samples=samples_for_sigma,
+        verbose=False
+    )
+
+    print("sigma:", sigma)
+
+    # Algorithm 1 in the paper. Denominator (i.e. s_hat) estimation
+    mu_hat, d_used, profiling_results = estimate_mu_hat(
+        atoms=A,
+        query=x,
+        epsilon=epsilon / 2,
+        delta=delta / 3,
+        sigma=sigma,
+        original_dim=original_dim,
+        mu_precomputed=mu_precomputed,
+        n_heavy=n_heavy,
+        beta=beta,
+        verbose=verbose,
+    )
+
+    # mu_hat = (d_used * mu_hat + n_heavy * mu_precomputed) / (d_used + n_heavy)
+
+    """
+    #Test normalization estimation
+    if DEBUG:
+        mu_hat_numer = ((original_dim * d_used / x.shape[0]) * mu_hat + mu_precomputed * n_heavy)
+        mu_hat_prime = mu_hat_numer / (d_used + n_heavy)
+        S_hat = np.sum(np.exp(mu_hat_prime))
+        true_S = np.sum(np.exp(true_mu))
+        error = (S_hat - true_S) / true_S
+        print("budget:", d_used)
+        print("S error:", error)
+        print("True_S:", true_S)
+    """
+
+    # Best arm identification for y_hat (i.e. numerator) estimation.
+    # NOTE: the additional samples used for this process will also be used to update mu
+    best_indices, updated_mu_hat, d_used_updated = find_topk_arms(
+        atoms=A,
+        query=x,
+        sigma=sigma,
+        delta=delta / 3,
+        original_dim=original_dim,
+        mu_precomputed=mu_precomputed,
+        n_heavy=n_heavy,
+        mu_approx=mu_hat,
+        d_used=d_used,
+        batch_size=BATCH_SIZE,
+        k=k,
+    )
+
+    # Total samples to use for better approximation of the mu of the top k arms.
+    # This means we sample n_arm_pull - used_samples more times and update mu accordingly
+    dim = x.shape[0]
+    n_arm_pull = int(min(
+        np.ceil((288 * sigma ** 2 * beta ** 2 * np.log(6 / delta)) / (epsilon ** 2)),
+        dim
+    ))
+    for arm_index in best_indices:
+        used_sample = d_used_updated[arm_index]
+        if used_sample < n_arm_pull:
+            mu_additional = dim * A[arm_index, used_sample: n_arm_pull] @ x[used_sample: n_arm_pull]
+            updated_mu_hat[arm_index] = (updated_mu_hat[arm_index] * used_sample + mu_additional) / n_arm_pull
+
+    # compute budget
+    d_used_updated[best_indices] = np.maximum(d_used_updated[best_indices], n_arm_pull)
+    budget = np.sum(d_used_updated).item()
+
+    # compensate for precomputation
+    if PRECOMPUTE:
+        updated_mu_hat_scaled = updated_mu_hat * (original_dim * d_used_updated / dim)
+        mu_precomputed_scaled = mu_precomputed * n_heavy
+        updated_mu_hat = (updated_mu_hat_scaled + mu_precomputed_scaled) / (d_used_updated + n_heavy)
+
+    # Using logsumexp trick for numerical stability
+    final_mu_hat = updated_mu_hat - np.max(updated_mu_hat)
+    y_hat = np.exp(beta * final_mu_hat)
+    s_hat = np.sum(y_hat)
+
+    return best_indices, y_hat / s_hat, budget
+
+
+if __name__ == "__main__":
+    # call something?
+    pass
