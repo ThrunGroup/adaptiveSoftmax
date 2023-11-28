@@ -3,7 +3,6 @@ from adasoftmax import (ada_softmax,
                         estimate_mu_hat,
                         find_topk_arms,
                         approx_sigma,
-                        precompute_mu,
                         )
 from typing import Tuple
 import torch
@@ -23,86 +22,6 @@ epsilon = 0.1
 delta = 0.01
 num_sigma_samples = d
 k = 1
-
-def mu_precomputation_test(
-    true_mu: np.ndarray,
-    A: np.ndarray,
-    x: np.ndarray,
-    sigma: float,
-) -> bool:
-    """
-    Tests if the precomputation function does not introduce numerical error.
-
-    This mimics the precomputation routine in the adaSoftmax, calculates matrix-vector multiplication
-    with filtered A and x, and combine them. The resulting vector should be same(or show very little error) compared to
-    the true_mu, as the operation described above is equivalent of computing matrix-vector multiplication.
-
-    :param true_mu: ground truth mu(true_mu == A@x)
-    :param A: matrix A in the paper
-    :param x: vector x in the paper
-    """
-    n_arms, dim = A.shape
-
-    # Precompute the outliers, exclude them from A and x(This is same as precomputation routine in adaSoftmax)
-    mu_precomputed, heavy_hitters, n_heavy = precompute_mu(A=A, x=x)
-    subset_mask = np.ones(x.shape[0])
-    subset_mask[heavy_hitters] = 0
-    subset_mask = subset_mask.astype(np.bool_)
-    filtered_A = A[:, subset_mask]
-    filtered_x = x[subset_mask]
-
-    # Compute dimensions
-    n_remaining_columns = filtered_x.shape[0]
-
-    """
-    # Compute matrix-vector multiplication between filtered A and x
-    filtered_mu = (original_dim / n_remaining_columns) * (A @ x)
-    filtered_mu_1 = (original_dim / n_remaining_columns) * (A[:, :n_remaining_columns // 2] @ x[:n_remaining_columns // 2])
-    filtered_mu_2 = A[:, n_remaining_columns // 2:] @ x[n_remaining_columns // 2:]
-    """
-
-    # Compute mu_hat for normalization constant estimation
-    mu_hat_norm, budget_vec_norm, _ = estimate_mu_hat(
-        atoms=filtered_A,
-        query=filtered_x,
-        epsilon=epsilon / 2,
-        delta=delta / 3,
-        sigma=sigma,
-        original_dim=x.shape[0],
-        mu_precomputed=mu_precomputed,
-        n_heavy=n_heavy,
-        beta=beta,
-    )
-
-    # combine precomputed mu and mu_hat from the normalization constant estimation
-    mu_precomputed_scaled = mu_precomputed * (n_heavy / (budget_vec_norm + n_heavy))
-    mu_hat_scaled = mu_hat_norm * (budget_vec_norm / (budget_vec_norm + n_heavy))
-    mu_hat_combined = mu_precomputed_scaled + mu_hat_scaled
-
-    """
-    Concatenate sampled mu with heavy-hitter columns, and compute A@x per-row fashion.
-    This is to test if combining precomputed result with mu_hat from normalization estimation
-    introduces any numerical instability.
-    """
-    oneshot_mu_hat = np.empty(n_arms)
-    for i in range(n_arms):
-        A_row_concatenated = np.hstack([filtered_A[i, :budget_vec_norm[i]], A[i, heavy_hitters]])
-        x_concatnated = np.hstack([filtered_x[:budget_vec_norm[i]], x[heavy_hitters]])
-        oneshot_mu_hat[i] = (dim / (budget_vec_norm[i] + n_heavy)) * (A_row_concatenated @ x_concatnated)
-
-    # Compare mu_hat calculated in single operation with combined mu_hat
-    numerical_error = mu_hat_combined - oneshot_mu_hat
-    print(np.sum(budget_vec_norm))
-    # print("Numerical error for precomputation trick:")
-    # print(numerical_error)
-
-    # Compare with true_mu, calculate error
-    ground_truth_error = true_mu - mu_hat_combined
-    # print("Precomputation error:\n", ground_truth_error)
-    # print("budgets:", n_heavy, n_remaining_columns)
-    # print("sanity_check", true_mu - filtered_mu_scaled / n_remaining_columns)
-
-    return np.max(numerical_error) >= 1e-3
 
 def normalization_estimation_test(
     true_mu: np.ndarray,
@@ -127,18 +46,18 @@ def normalization_estimation_test(
     true_S = np.sum(np.exp(beta * true_mu))
 
     # Estimate the normalization constant using the algorithm
-    mu_hat_norm, budget_vec_norm, _ = estimate_mu_hat(
+    mu_hat_norm, budget_vec_norm = estimate_mu_hat(
         atoms=A,
         query=x,
         epsilon=epsilon / 2,
         delta=delta / 3,
         sigma=sigma,
         beta=beta,
+        true_mu=true_mu,
     )
     S_estimate = np.sum(np.exp(beta * mu_hat_norm))
 
     S_error = np.abs(S_estimate - true_S) / true_S
-    print("se:", S_error)
     is_correct = S_error <= epsilon / 2  # Refer to algorithm 2, Line 3 in original paper for epsilon bound
     normalization_estimation_budget = np.sum(budget_vec_norm).item()
 
@@ -228,6 +147,7 @@ def ada_softmax_test(
         samples_for_sigma=d,
         beta=beta,
         k=k,
+        verbose=False,
     )
 
     best_indices_hat = np.sort(best_indices_hat)
@@ -254,9 +174,6 @@ def ada_softmax_test(
 
 if __name__ == "__main__":
     np.random.seed(42)
-
-    # test result aggregates for heavy-hitter trick
-    n_numerical_error = 0
 
     # test result aggregates for softmax normalization estimation
     total_S_error = 0.0
@@ -289,17 +206,6 @@ if __name__ == "__main__":
 
         # calculate true sigma
         sigma = approx_sigma(A, x, num_sigma_samples)
-
-        # precomputation trick test
-        numerical_error_present = mu_precomputation_test(
-            true_mu=true_mu,
-            A=A,
-            x=x,
-            sigma=sigma,
-        )
-        if numerical_error_present:
-            print("numerical error")
-            n_numerical_error += 1
 
         # normalization constant estimation test
         S_error, S_within_bound, normalization_estimation_budget = normalization_estimation_test(
@@ -345,9 +251,6 @@ if __name__ == "__main__":
     average_S_error = total_S_error / NUM_TESTS
     average_softmax_error = total_softmax_error / NUM_TESTS
 
-
-    print("----------------------------------------------------")
-    print("number of numerical error: ", n_numerical_error)
     print("----------------------------------------------------")
     print("desired S estimation error:", epsilon / 2)
     print("average empirical S estimation error:", average_S_error)

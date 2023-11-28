@@ -1,17 +1,17 @@
 import torch
 from tqdm import tqdm
-from transformers import GPT2LMHeadModel, GPT2TokenizerFast
+from transformers import GPTNeoForCausalLM, GPT2TokenizerFast
 from datasets import load_dataset
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print("device is ", device)
-model_id = "gpt2"
-model = GPT2LMHeadModel.from_pretrained(model_id).to(device)
+model_id = "EleutherAI/gpt-neo-2.7B"  # perplexity should be 11.39
+model = GPTNeoForCausalLM.from_pretrained(model_id).to(device)
 tokenizer = GPT2TokenizerFast.from_pretrained(model_id)
 
 test = load_dataset("wikitext", "wikitext-2-raw-v1", split="test")
 encodings = tokenizer("\n\n".join(test["text"]), return_tensors="pt")
-max_length = model.config.n_positions
+max_length = model.config.max_length
 stride = 512
 seq_len = encodings.input_ids.size(1)
 

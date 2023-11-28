@@ -10,12 +10,11 @@ from tqdm import tqdm
 
 import os, sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'adaptive_softmax'))
-from adasoftmax import ada_softmax, precompute_mu
+from adasoftmax import ada_softmax
 from gpt_constants import (
     MULTIPLICATIVE_ERROR,
     DELTA_ERROR,
     WIKITEXT_BETA,
-    PRECOMPUTE,
 )
 
 
@@ -136,9 +135,10 @@ def get_adaptive_forward(model) -> Callable:
         hidden_states = transformer_outputs[0]
         flattened_states = hidden_states.view(-1, hidden_states.size(-1))   # TODO: currently only supports batch = 1
 
-        A = model.lm_head.weight.data.numpy()   # size = (embed, vocab_size)
-        x = flattened_states[-1].numpy()
+        A = model.lm_head.weight.data.cpu().numpy()   # size = (embed, vocab_size)
+        x = flattened_states[-1].cpu().numpy()
 
+        # [NOTE] this is where our algorithm is being called!
         best_arms, z, adaptive_budget = ada_softmax(
             A=A,
             x=x,
@@ -148,11 +148,6 @@ def get_adaptive_forward(model) -> Callable:
             verbose=verbose,
         )
         likelihood = torch.tensor(z)
-
-        # FOR DEBUGGING PURPOSES. ERASE WHEN FINISHED
-        print("best arms from adasoftmax: ", best_arms)
-        print("\ngroundtruth best arms: ", np.argmax(A@x))
-
         return likelihood, adaptive_budget
 
     return adaptive_forward
@@ -197,7 +192,7 @@ def run_experiment(
         end_loc = min(begin_loc + max_length, seq_len)
         tokens = encodings.input_ids[:, begin_loc:end_loc].to(device)
         input_ids = tokens[:, :-1].contiguous()
-        target_id = tokens[:, -1]
+        target_id = tokens[:, -1].cpu()   # TODO: currently only allows cpu support
 
         with torch.no_grad():
             naive_logits = naive_model(input_ids, labels=None, return_dict=False)[0]
@@ -217,15 +212,21 @@ def run_experiment(
 
         if end_loc == seq_len:
             break
+        print('\n')
 
     is_correct, gain = None, None
     if exp_type == "both" or exp_type == "correctness":
         is_correct = check_correctness(naive_lls, adaptive_lls, verbose=True)
     if exp_type == "both" or exp_type == "gains":
-        gain = get_gains(flattened_naive_logits.numpy(), naive_budget, adaptive_budget, verbose=True)
+        true_mu = flattened_naive_logits
+        gain = get_gains(true_mu.cpu().numpy(), naive_budget, adaptive_budget, verbose=True)
 
     print(f"==> Experiment {exp_type} is {is_correct} with gain {gain}")
 
 
 if __name__ == "__main__":
-    run_experiment(num_samples=100, verbose=False)
+    run_experiment(
+      num_samples=10, 
+      model_id='gpt2-xl',
+      verbose=True,
+    )
