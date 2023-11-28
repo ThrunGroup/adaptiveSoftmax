@@ -6,27 +6,15 @@ DEFAULT_DELTA = 0.01
 PROFILE = False
 RETURN_STAGE_BUDGETS = False  # TODO (@wonjun): this constant unused?
 OPTIMIZE_CONSTANTS = False
+VERBOSE = True     # this just prints out the budgets. set DEBUG flag for more stats
 
-PRECOMPUTE = False
-DEV_RATIO = 0.3   # setting this smaller means more outliers
-
-# TODO: decompose this into more constants
-# debugging should give information on the following:
-#   1. decomposition of budget for different stages 
-#   2. decomposition of error probability (i.e. where is algorithm failing?)
-#   3. how "heavy" are heavy hitters -> sigma before/after 
-PLOT_VARIANCE = False
-PLOT_BUDGET = False
+# debugging constants (will write to log)
+DEBUG = True
+DEV_BY = 1  # std deviations  
+DEV_RATIO = 0.5 # setting smaller leads to more outliers
+NUM_BINS = 10
 
 # constants for budget  
-
-"""
-UNI_CONST = 8e-4 # T0 = d/10
-F_ORDER_CONST = 1e2 
-S_ORDER_CONST = 1e10
-"""
-
-
 UNI_CONST = 1
 F_ORDER_CONST = 1
 S_ORDER_CONST = 1

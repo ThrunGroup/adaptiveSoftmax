@@ -53,7 +53,6 @@ def normalization_estimation_test(
         delta=delta / 3,
         sigma=sigma,
         beta=beta,
-        true_mu=true_mu,
     )
     S_estimate = np.sum(np.exp(beta * mu_hat_norm))
 
@@ -96,7 +95,7 @@ def topk_identification_test(
         query=x,
         sigma=sigma,
         delta=delta / 3,
-        mu_approx=topk_start_mu_hat,
+        mu_hat=topk_start_mu_hat,
         d_used=topk_start_budget,
         k=k,
     )
