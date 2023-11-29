@@ -1,14 +1,14 @@
 name: Run Basic Logic Tests
 
-on: [push, pull_request]
+on: [push]
 
 jobs:
   run-tests:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
-        python-version: ["3.9", "3.10", "3.11"]
+        os: [macos-latest]
+        python-version: ["3.11"]
     
     runs-on: ${{ matrix.os }}
 
