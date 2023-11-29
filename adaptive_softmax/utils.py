@@ -160,8 +160,9 @@ def compare_true_arms(
     true_best_arms = np.sort(true_best_arms)
     diffs = mu[best_arms] - mu[true_best_arms]
 
-    with open("logs/log.txt", "a") as f:
-        f.write(f"algo arms <-> true arms: {best_arms} <-> {true_best_arms}\n")
-        f.write(f"difference in mu for these arms: {diffs}\n")
+    if DEBUG:
+        with open("logs/log.txt", "a") as f:
+            f.write(f"algo arms <-> true arms: {best_arms} <-> {true_best_arms}\n")
+            f.write(f"difference in mu for these arms: {diffs}\n")
 
     return true_best_arms, diffs
