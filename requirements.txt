@@ -9,3 +9,5 @@
 # tqdm==4.66.1
 # transformers==4.34.0
 # wandb==0.15.12
+
+numpy==1.25.2
