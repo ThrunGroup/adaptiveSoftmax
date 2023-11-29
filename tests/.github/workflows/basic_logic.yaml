@@ -3,6 +3,7 @@ name: Basic Logic Tests
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 jobs:
   run-tests:
