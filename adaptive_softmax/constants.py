@@ -10,10 +10,11 @@ SAMPLES_FOR_SIGMA = None
 UNI_CONST = 1
 F_ORDER_CONST = 1
 S_ORDER_CONST = 1
-VERBOSE = False  # set DEBUG flag for more stats
+VERBOSE = True  # set DEBUG flag for more stats
 
 # debugging constants (will write to log)
-DEBUG = False
+DEBUG = True
+LOG_PATH = "logs/log.txt"
 DEV_BY = 1  # std deviations  
 DEV_RATIO = 0.5 # setting smaller leads to more outliers
 NUM_BINS = 10

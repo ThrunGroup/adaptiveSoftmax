@@ -24,6 +24,7 @@ from .constants import (
     S_ORDER_CONST,
 
     DEBUG,
+    LOG_PATH,
 )
 
 
@@ -250,7 +251,7 @@ def ada_softmax(
     """
     if DEBUG:
        create_logs_file()
-       with open(path, 'w') as f:
+       with open(LOG_PATH, 'w') as f:
             f.write("\n########### starting new experiment ###########\n")
     
     n, d = A.shape
