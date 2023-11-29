@@ -250,6 +250,8 @@ def ada_softmax(
     """
     if DEBUG:
        create_logs_file()
+       with open(path, 'w') as f:
+            f.write("\n########### starting new experiment ###########\n")
     
     n, d = A.shape
     if sigma is None:

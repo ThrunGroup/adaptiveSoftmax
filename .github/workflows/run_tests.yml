@@ -1,4 +1,4 @@
-name: Run Basic Logic Tests
+name: Testing adaSoftmax correctness
 
 on: [push]
 

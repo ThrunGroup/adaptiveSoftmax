@@ -25,7 +25,7 @@ def create_logs_file():
     # Check file + init message
     if not os.path.isfile(path):
         with open(path, 'w') as f:
-            f.write("\n########### starting new experiment ###########\n")
+            pass
 
 
 def approx_sigma(
@@ -54,7 +54,7 @@ def approx_sigma(
     scaled_sigma = d * np.median(sigma)
     
     if DEBUG:
-        
+        check_logs_file()
         with open("logs/log.txt", "a") as f:
            f.write(f"sigma: {scaled_sigma}\n")        
 
@@ -101,7 +101,8 @@ def get_importance_errors(
     gamma_error = gamma / true_gamma
  
     if DEBUG:
-       with open("debug/log.txt", "a") as f:
+        check_logs_file()
+        with open("debug/log.txt", "a") as f:
             f.write("(alpha, gamma error): ")
             for errors in zip(alpha_error, gamma_error):
                 f.write(f"{errors}")
@@ -121,6 +122,7 @@ def get_fs_errors(
     s_error = np.sum(np.exp(mu_hat) * (beta**2 * (mu - mu_hat)**2))
     s_error /= np.sum(np.exp(mu))
     if DEBUG:
+        check_logs_file()
         with open("logs/log.txt", "a") as f:
             f.write(f"(first order, second order): {f_error, s_error}\n")
 
@@ -161,6 +163,7 @@ def compare_true_arms(
     diffs = mu[best_arms] - mu[true_best_arms]
 
     if DEBUG:
+        check_logs_file()
         with open("logs/log.txt", "a") as f:
             f.write(f"algo arms <-> true arms: {best_arms} <-> {true_best_arms}\n")
             f.write(f"difference in mu for these arms: {diffs}\n")
