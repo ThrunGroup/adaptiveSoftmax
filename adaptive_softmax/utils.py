@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import Tuple, Any
@@ -8,6 +9,23 @@ from .constants import (
     DEV_RATIO,
     NUM_BINS,
 )
+
+
+def create_logs_file():   
+    path = "logs/log.txt"
+
+    # Check directory
+    if not os.path.exists(os.path.dirname(path)):
+        try:
+            os.makedirs(os.path.dirname(path))
+        except OSError as exc:  # Guard against race condition
+            if exc.errno != errno.EEXIST:
+                raise
+
+    # Check file + init message
+    if not os.path.isfile(path):
+        with open(path, 'w') as f:
+            f.write("\n########### starting new experiment ###########\n")
 
 
 def approx_sigma(
@@ -36,6 +54,7 @@ def approx_sigma(
     scaled_sigma = d * np.median(sigma)
     
     if DEBUG:
+        
         with open("logs/log.txt", "a") as f:
            f.write(f"sigma: {scaled_sigma}\n")        
 

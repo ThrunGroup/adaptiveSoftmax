@@ -7,6 +7,7 @@ from .utils import (
     get_fs_errors,
     plot_norm_budgets,
     compare_true_arms,
+    create_logs_file,
 )
 
 from .constants import (
@@ -248,8 +249,7 @@ def ada_softmax(
     :return: top-k indices, estimation of softmax value across all indices, and total number of sampled used.
     """
     if DEBUG:
-       with open("debug/log.txt", "a") as f:
-          f.write("\n########### starting new experiment ###########\n")
+       create_logs_file()
     
     n, d = A.shape
     if sigma is None:

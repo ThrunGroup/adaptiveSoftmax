@@ -1,5 +1,5 @@
 import numpy as np
-from adasoftmax import (ada_softmax,
+from adaptive_softmax.adasoftmax import (ada_softmax,
                         estimate_mu_hat,
                         find_topk_arms,
                         approx_sigma,
