@@ -1,20 +1,35 @@
 import torch
+
 from tqdm import tqdm
-from transformers import GPT2LMHeadModel, GPT2TokenizerFast
+from transformers import GPTNeoXForCausalLM, AutoTokenizer
 from datasets import load_dataset
+from pythia_constants import PYTHIA_70M
 
-device = "cuda"
-model_id = "gpt2"
-model = GPT2LMHeadModel.from_pretrained(model_id).to(device)
-tokenizer = GPT2TokenizerFast.from_pretrained(model_id)
+device = "cuda" if torch.cuda.is_available() else "cpu"
+print("device is ", device)
 
+# setting up model and tokenizer
+model = GPTNeoXForCausalLM.from_pretrained(
+    PYTHIA_70M,
+    revision="step3000",
+    cache_dir="./pythia-70m-deduped/step3000",
+).to(device)
+max_length = model.config.max_length    # length of the context window
+
+tokenizer = AutoTokenizer.from_pretrained(
+  PYTHIA_70M,
+  revision="step3000",
+  cache_dir="./pythia-70m-deduped/step3000",
+)
+
+# retrieving dataset
 test = load_dataset("wikitext", "wikitext-2-raw-v1", split="test")
 encodings = tokenizer("\n\n".join(test["text"]), return_tensors="pt")
-max_length = model.config.max_length
-stride = 512
-seq_len = encodings.input_ids.size(1)
+seq_len = encodings.input_ids.size(1)   # length of the sequence we're analyzing
 
+# perplexity experiment --> should be 11.39
 nlls = []
+stride = 512
 prev_end_loc = 0
 for begin_loc in tqdm(range(0, seq_len, stride)):
     end_loc = min(begin_loc + max_length, seq_len)
@@ -24,8 +39,9 @@ for begin_loc in tqdm(range(0, seq_len, stride)):
     target_ids[:, :-trg_len] = -100
 
     with torch.no_grad():
-        import ipdb; idpb.set_trace()
+        import ipdb; ipdb.set_trace()
         outputs = model(input_ids, labels=target_ids)
+
 
         # loss is calculated using CrossEntropyLoss which averages over valid labels
         # N.B. the model only calculates loss over trg_len - 1 labels, because it internally shifts the labels
