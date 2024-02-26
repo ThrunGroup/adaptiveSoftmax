@@ -1,19 +1,27 @@
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import Tuple, Any
 
-from constants import (
+dir_path = os.path.dirname(os.path.abspath(__file__))
+debug_path = os.path.join(dir_path, 'debug')
+log_file_path = os.path.join(dir_path, 'debug', 'log.txt')
+
+from .constants import (
     DEBUG,
     DEV_BY,
     DEV_RATIO,
     NUM_BINS,
+    IMPORTANCE,
 )
 
+np.random.seed(42)
 
 def approx_sigma(
     A: np.ndarray,
     x: np.ndarray,
     num_samples: Any = None,
+    importance: bool = IMPORTANCE,
 ) -> float:
     """
     Function to approximate sigma. 
@@ -26,18 +34,27 @@ def approx_sigma(
     :returns: the sigma approximation
     """
     n, d = A.shape
+    dist = np.ones(d)/d   # initially uniform
 
     # default, get true sigma
     if num_samples is None:
         num_samples = d
 
-    elmul = A[:, :num_samples] * x[:num_samples]
-    sigma = np.std(elmul, axis=1)
-    scaled_sigma = d * np.median(sigma)
-    
+    if importance:
+      print("\nIMPORTANCE SAMPLING...")
+      factor = 0.1
+      importance = np.abs(x)/np.sum(np.abs(x))
+      dist = (1 - factor) * importance + factor * dist
+      dist = dist/dist.sum()  # for numerical stability
+
+    coordinates = np.random.choice(d, p=dist, size=num_samples, replace=False)
+    elmul = A[:, coordinates] * x[coordinates] / dist[coordinates] 
+    sigma = np.mean(np.std(elmul, axis=1))  # empirical variance (maybe use median?)    
+    print("sigma is ", sigma)
+
     if DEBUG:
-        with open("debug/log.txt", "a") as f:
-           f.write(f"sigma: {scaled_sigma}\n")        
+        with open(log_file_path, "a") as f:
+           f.write(f"sigma: {sigma}\n")        
 
         # get fraction of deviations that devitate by DEV_BY std (per arms)
         mus = np.mean(elmul, axis=1).reshape(-1, 1)
@@ -56,11 +73,10 @@ def approx_sigma(
         plt.ylabel(f"column frequency")
         plt.title(f"columns with fraction of arms greater than {DEV_BY} std")
         plt.text(0.95, 0.95, f"ratio of outliers: {len(num_outliers)/n:.2f}")
-
-        plt.savefig(f"debug/variance_of_columns.png")
+        plt.savefig(os.path.join(debug_path, "variance_of_columns.png"))
         plt.close()
 
-    return scaled_sigma
+    return sigma, dist
 
 
 def get_importance_errors(
@@ -74,18 +90,19 @@ def get_importance_errors(
     true_alpha = np.exp(beta * norm_mu)
     true_alpha = true_alpha / np.sum(true_alpha)
     alpha = alpha / np.sum(alpha)
-    alpha_error = alpha / true_alpha
+    alpha_error = np.mean(alpha / true_alpha)
+
 
     true_gamma = np.exp((beta * norm_mu) / 2)
     true_gamma = true_gamma / np.sum(true_gamma)
     gamma = gamma / np.sum(gamma)
-    gamma_error = gamma / true_gamma
+    gamma_error = np.mean(gamma / true_gamma)
+
  
     if DEBUG:
-       with open("debug/log.txt", "a") as f:
+       with open(log_file_path, "a") as f:
             f.write("(alpha, gamma error): ")
-            for errors in zip(alpha_error, gamma_error):
-                f.write(f"{errors}")
+            f.write(f"({alpha_error}, {gamma_error})")
             f.write("\n")
 
     return alpha_error, gamma_error
@@ -102,7 +119,7 @@ def get_fs_errors(
     s_error = np.sum(np.exp(mu_hat) * (beta**2 * (mu - mu_hat)**2))
     s_error /= np.sum(np.exp(mu))
     if DEBUG:
-        with open("debug/log.txt", "a") as f:
+        with open(log_file_path, "a") as f:
             f.write(f"(first order, second order): {f_error, s_error}\n")
 
     return f_error, s_error
@@ -116,10 +133,10 @@ def plot_norm_budgets(
     f_error: np.ndarray,
     s_error: np.ndarray,
 ):
-    text = f"mean alpha error: {np.mean(a_error):.3f}\n" 
-    text += f"mean gamma error: {np.mean(g_error):.3f}\n" 
-    text += f"first order error: {f_error:.3f}\n" 
-    text += f"second order error: {s_error:.3f}\n" 
+    text = f"alpha err: {a_error:.3f}\n" 
+    text += f"gamma err: {g_error:.3f}\n" 
+    text += f"fo err: {f_error:.3f}\n" 
+    text += f"so error: {s_error:.3f}\n" 
 
     bin_edges = np.linspace(0.0, 1.0, NUM_BINS + 1)
     plt.hist(budget/d, bins=bin_edges, edgecolor='black')
@@ -129,7 +146,7 @@ def plot_norm_budgets(
     plt.title('arm pulls for adaptive sampling')
     plt.text(0.95, 0.95, text)
 
-    plt.savefig("debug/normalization_budget.png")
+    plt.savefig(os.path.join(debug_path, "normalization_budget.png"))
     plt.close()
     
 
@@ -142,7 +159,7 @@ def compare_true_arms(
     true_best_arms.sort()
     diffs = mu[best_arms] - mu[true_best_arms]
 
-    with open("debug/log.txt", "a") as f:
+    with open(log_file_path, "a") as f:
         f.write(f"algo arms <-> true arms: {best_arms} <-> {true_best_arms}\n")
         f.write(f"difference in mu for these arms: {diffs}\n")
 

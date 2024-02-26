@@ -1,7 +1,8 @@
+import os
 import numpy as np
 from typing import Tuple, Any
 
-from utils import (
+from .utils import (
     approx_sigma,
     get_importance_errors,
     get_fs_errors,
@@ -9,7 +10,7 @@ from utils import (
     compare_true_arms,
 )
 
-from constants import (
+from .constants import (
     BATCH_SIZE,
     TOP_K,
     BETA,
@@ -25,6 +26,7 @@ from constants import (
     DEBUG,
 )
 
+np.random.seed(42)
 
 def estimate_mu_hat(
     atoms: np.ndarray,
@@ -33,6 +35,7 @@ def estimate_mu_hat(
     delta: float,
     sigma: float,
     beta: float,
+    dist: np.ndarray,
     verbose: bool = VERBOSE,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
@@ -63,8 +66,11 @@ def estimate_mu_hat(
 
     # Get mu approximation. Any time mu_hat gets updated, scale by 1/scalar
     # and rescale appropriately with new dimension
+
+    # TODO: do we need replacement=False?
+    coordinates = np.random.choice(d, p=dist, size=uni_budget, replace=True)
     scalar = d / uni_budget
-    mu_hat = atoms[:, :uni_budget] @ query[:uni_budget]
+    mu_hat = atoms[:, coordinates] @ query[coordinates]
     mu_hat *= scalar
 
     # construct alpha and gamma
@@ -88,11 +94,16 @@ def estimate_mu_hat(
 
     # one-time sampling for each arm with the budget computed above
     # after sampling appropriately, norm_budget becomes the cumulative budget
+    num_samples = norm_budget - uni_budget
     for i in range(n):
-        mu_hat[i] /= scalar  # unscale
-        scalar_i = d / norm_budget[i]
-        mu_hat[i] += atoms[i, uni_budget:norm_budget[i]] @ query[uni_budget:norm_budget[i]]
-        mu_hat[i] *= scalar_i  # rescale
+
+      # TODO: do we need replacement=False?
+      coordinates = np.random.choice(d, p=dist, size=num_samples[i])
+
+      mu_hat[i] /= scalar  # unscale
+      scalar_i = d / norm_budget[i]
+      mu_hat[i] += atoms[i, coordinates] @ query[coordinates]
+      mu_hat[i] *= scalar_i  # rescale
 
     if verbose:
         adaptive_budget = np.sum(norm_budget - uni_budget) / (n * d)
@@ -114,6 +125,7 @@ def find_topk_arms(
     delta: float,
     d_used: np.ndarray,
     mu_hat: np.ndarray,
+    dist: np.ndarray,
     batch_size: int = BATCH_SIZE,
     k: int = TOP_K,
     verbose: bool = VERBOSE,
@@ -143,10 +155,10 @@ def find_topk_arms(
     best_ind = np.empty(n, dtype=np.int64)
     mask = np.ones(n, dtype='bool')   # initially all candidates are valid
 
-    # Run successive elimination to estimate mu_hat by sampling WITHOUT replacement
+    # Run successive elimination to estimate mu_hat by sampling 
     terminated = False
     while not terminated:
-        # construct conf interval
+        # construct conf interval (more samples -> smaller interval)
         numer = 2 * np.log(4 * n * d_used ** 2 / delta) 
         c_interval = sigma * np.sqrt(numer / (d_used + 1)) 
         c_interval[d_used == d] = 0
@@ -173,44 +185,41 @@ def find_topk_arms(
             surviving_arms = np.nonzero(mask)[0]
 
         # TODO: is this condition correct? 
-        compute_exactly = np.max(d_used[surviving_arms]) > (d - batch_size)
-        if compute_exactly or num_found >= k:
+        # compute_exactly = np.max(d_used[surviving_arms]) > (d - batch_size)
+        need_ground_truth = np.logical_and(d_used > d - batch_size, d_used < d)
+        compute_exactly = np.logical_and(mask, need_ground_truth)
+        if num_found >= k:
             # NOTE: we're not using the terminated variable
             terminated = True
             break
 
         # update mu approximation with batch_size more samples
-        mu_update = np.empty(np.sum(mask))
+        mu_update = np.zeros(np.sum(mask))
         for i, arm in enumerate(surviving_arms):
             prev = d_used[arm]
-            mu_update[i] = atoms[arm, prev: prev + batch_size] @ query[prev: prev + batch_size]
+            if not compute_exactly[arm]:
+
+              # TODO: do we need replacement=False?
+              coordinates = np.random.choice(d, p=dist, size=batch_size)
+              mu_update[i] = atoms[arm, coordinates] @ query[coordinates]
+
+
+        # idenfity arms that are bruteforced
+        compute_exactly_indices = np.nonzero(compute_exactly)[0]
+        sampled_arms = np.setdiff1d(surviving_arms, compute_exactly_indices)
 
         # update mu_hat
         scalars = d / d_used[surviving_arms]
         mu_hat[surviving_arms] /= scalars  # unscale
 
-        d_used[surviving_arms] += batch_size  # incremented in place
+        d_used[sampled_arms] += batch_size  # incremented in place
         mu_hat[surviving_arms] += mu_update
         scalars = d / d_used[surviving_arms]
         mu_hat[surviving_arms] *= scalars  #rescale
 
-    # Brute force computation for the remaining candidates
-    if compute_exactly:
-        for i, arm in enumerate(surviving_arms):
-          used = d_used[arm]
-          if used < d:
-            scalar = d / d_used[arm]
-            mu_hat[arm] /= scalar  # unscale
-            mu_hat[arm] += atoms[arm, used:] @ query[used:] 
-        
-        # At this point, mu_hat is true mu. Need to find the rest of the best arms
-        mu_for_search = mu_hat.copy() 
-        d_used[surviving_arms] = d
-        while num_found < k:
-            best_index = np.argmax(mu_hat) 
-            best_ind[num_found] = best_index
-            mu_for_search[best_index] = -np.inf  # TODO: why are we setting to -inf?
-            num_found += 1
+        # Brute force computation
+        mu_hat[compute_exactly_indices] = atoms[compute_exactly_indices] @ query
+        d_used[compute_exactly_indices] = d
     
     if verbose: 
       best_arm_budget = np.sum(d_used) - np.sum(prev_d_used)
@@ -248,11 +257,13 @@ def ada_softmax(
     :return: top-k indices, estimation of softmax value across all indices, and total number of sampled used.
     """
     if DEBUG:
-       with open("debug/log.txt", "a") as f:
+      dir_path = os.path.dirname(os.path.abspath(__file__))
+      log_file_path = os.path.join(dir_path, 'debug', 'log.txt')
+      with open(log_file_path, "a") as f:
           f.write("\n########### starting new experiment ###########\n")
     
     n, d = A.shape
-    sigma = approx_sigma(A, x, samples_for_sigma)
+    sigma, dist = approx_sigma(A, x, samples_for_sigma)
 
     # Algorithm 1 in the paper. Denominator (i.e. s_hat) estimation  
     mu_hat, d_used = estimate_mu_hat(
@@ -262,6 +273,7 @@ def ada_softmax(
         delta=delta / 3,
         sigma=sigma,
         beta=beta,
+        dist=dist,
         verbose=verbose,
     )
 
@@ -276,6 +288,7 @@ def ada_softmax(
         batch_size=BATCH_SIZE,
         k=k,
         mu_hat=mu_hat,
+        dist=dist,
         verbose=verbose,
     )
 
@@ -286,7 +299,10 @@ def ada_softmax(
     for arm in best_indices:
       used = d_used[arm]
       if used < n_arm_pull:
-        mu_additional = d * A[arm, used: n_arm_pull] @ x[used: n_arm_pull]
+
+        # TODO: do we need replacement=False?
+        coordinates = np.random.choice(d, p=dist, size=n_arm_pull - used)
+        mu_additional = d * A[arm, coordinates] @ x[coordinates]
         mu_hat[arm] = (mu_hat[arm] * used + mu_additional) / n_arm_pull
 
     if verbose:

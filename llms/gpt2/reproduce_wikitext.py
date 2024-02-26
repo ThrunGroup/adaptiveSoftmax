@@ -4,7 +4,7 @@ from transformers import GPT2LMHeadModel, GPT2TokenizerFast
 from datasets import load_dataset
 
 device = "cuda"
-model_id = "gpt2"
+model_id = "gpt2-xl"
 model = GPT2LMHeadModel.from_pretrained(model_id).to(device)
 tokenizer = GPT2TokenizerFast.from_pretrained(model_id)
 
@@ -24,7 +24,7 @@ for begin_loc in tqdm(range(0, seq_len, stride)):
     target_ids[:, :-trg_len] = -100
 
     with torch.no_grad():
-        import ipdb; idpb.set_trace()
+        import ipdb; ipdb.set_trace()
         outputs = model(input_ids, labels=target_ids)
 
         # loss is calculated using CrossEntropyLoss which averages over valid labels
