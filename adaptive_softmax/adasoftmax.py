@@ -60,7 +60,8 @@ def estimate_mu_hat(
     if verbose:
       print(f"=> uniform budget is {uni_budget * 100 / d:.2f}% of d")
 
-    if uni_budget >= d: # naive comp
+    # brute force if we already sampled "d" coordinates
+    if uni_budget >= d:
         mu = (atoms @ query).astype(np.float64)
         return mu, d * np.ones(n).astype(np.int64)
 
@@ -68,7 +69,7 @@ def estimate_mu_hat(
     # and rescale appropriately with new dimension
 
     # TODO: do we need replacement=False?
-    coordinates = np.random.choice(d, p=dist, size=uni_budget, replace=True)
+    coordinates = np.random.choice(d, p=dist, size=uni_budget)
     scalar = d / uni_budget
     mu_hat = atoms[:, coordinates] @ query[coordinates]
     mu_hat *= scalar
@@ -89,21 +90,8 @@ def estimate_mu_hat(
 
     # get budget "per arms"
     norm_budget = np.maximum(np.maximum(uni, f_order), s_order)
-    norm_budget = np.minimum(beta**2 * sigma**2 * norm_budget, d)
+    norm_budget = np.minimum(beta**2 * sigma**2 * norm_budget, d)   # brute force check
     norm_budget = np.ceil(norm_budget).astype(np.int64)
-
-    # one-time sampling for each arm with the budget computed above
-    # after sampling appropriately, norm_budget becomes the cumulative budget
-    num_samples = norm_budget - uni_budget
-    for i in range(n):
-
-      # TODO: do we need replacement=False?
-      coordinates = np.random.choice(d, p=dist, size=num_samples[i])
-
-      mu_hat[i] /= scalar  # unscale
-      scalar_i = d / norm_budget[i]
-      mu_hat[i] += atoms[i, coordinates] @ query[coordinates]
-      mu_hat[i] *= scalar_i  # rescale
 
     if verbose:
         adaptive_budget = np.sum(norm_budget - uni_budget) / (n * d)
@@ -114,7 +102,23 @@ def estimate_mu_hat(
             a_error, g_error = get_importance_errors(true_mu, gamma_numer, alpha_numer, beta)
             f_error, s_error = get_fs_errors(true_mu, mu_hat, beta)
             plot_norm_budgets(d, adaptive_budget, a_error, g_error, f_error, s_error)
-      
+
+    # one-time sampling for each arm with the budget computed above
+    # after sampling appropriately, norm_budget becomes the cumulative budget
+    num_samples = norm_budget - uni_budget
+    for i in range(n):
+        num_samples_i = num_samples[i]
+
+        # brute force per arm
+        if num_samples_i >= d:
+            mu_hat[i] = atoms[i, :] @ query
+        else: 
+            coordinates = np.random.choice(d, p=dist, size=num_samples[i])
+            mu_hat[i] /= scalar  # unscale
+            scalar_i = d / norm_budget[i]
+            mu_hat[i] += atoms[i, coordinates] @ query[coordinates]
+            mu_hat[i] *= scalar_i  # rescale
+   
     return mu_hat, norm_budget
 
 
@@ -202,7 +206,6 @@ def find_topk_arms(
               # TODO: do we need replacement=False?
               coordinates = np.random.choice(d, p=dist, size=batch_size)
               mu_update[i] = atoms[arm, coordinates] @ query[coordinates]
-
 
         # idenfity arms that are bruteforced
         compute_exactly_indices = np.nonzero(compute_exactly)[0]

@@ -10,7 +10,6 @@ from copy import deepcopy
 from typing import Union, Tuple, Optional, Callable, List
 from tqdm import tqdm
 
-
 sys.path.append('/content/drive/MyDrive')
 from adaptive_softmax.adasoftmax import ada_softmax
 from .gpt_constants import (
