@@ -174,55 +174,37 @@ def find_topk_arms(
 
         surviving = (mu_hat + c_interval) >= lower_bound
         mask = mask & surviving
-        surviving_arms = np.nonzero(mask)[0]  # get nonzero indices of mask (this is NOT deprecated)
+        surviving_arms = np.nonzero(mask)[0]    # TODO: can contain mu's that were bruteforced...
 
-        # revive previously eliminated arms if we have less than k surviving arms
+        # revive eliminated arms if we have less than k surviving arms
         if len(surviving_arms) <= k - num_found:
             best_ind[:len(surviving_arms)] = surviving_arms
             num_found += len(surviving_arms)
-
-            # We want to revive only the candidates that have been removed from current rounds
-            # this means we want to set surviving_arms to true only when current mask is False,
-            # and previous mask is True, and every other mask should be False.
-            # XOR operation gives the desired result, hence we're using XOR.
-            mask = np.logical_xor(prev_mask, mask)  # revive candidates eliminated at current round
+            mask = prev_mask.copy()    # reviving CURRENT eliminations
             surviving_arms = np.nonzero(mask)[0]
 
-        # TODO: is this condition correct? 
-        # compute_exactly = np.max(d_used[surviving_arms]) > (d - batch_size)
-        need_ground_truth = np.logical_and(d_used > d - batch_size, d_used < d)
-        compute_exactly = np.logical_and(mask, need_ground_truth)
+        # done if we found our k-arms
         if num_found >= k:
             # NOTE: we're not using the terminated variable
             terminated = True
             break
 
-        # update mu approximation with batch_size more samples
+        # PULLING MORE ARMS HERE. update mu approximation with batch_size more samples
         mu_update = np.zeros(np.sum(mask))
         for i, arm in enumerate(surviving_arms):
-            prev = d_used[arm]
-            if not compute_exactly[arm]:
 
-              # TODO: do we need replacement=False?
+            if d_used[arm] < d:
               coordinates = np.random.choice(d, p=dist, size=batch_size)
-              mu_update[i] = atoms[arm, coordinates] @ query[coordinates]
-
-        # idenfity arms that are bruteforced
-        compute_exactly_indices = np.nonzero(compute_exactly)[0]
-        sampled_arms = np.setdiff1d(surviving_arms, compute_exactly_indices)
+              mu_update[i] = atoms[arm, coordinates] @ query[coordinates]  
+              d_used[arm] += batch_size          
+            else: 
+               mu_update[i] = 0     # no update needed for bruteforced arms
 
         # update mu_hat
         scalars = d / d_used[surviving_arms]
         mu_hat[surviving_arms] /= scalars  # unscale
-
-        d_used[sampled_arms] += batch_size  # incremented in place
         mu_hat[surviving_arms] += mu_update
-        scalars = d / d_used[surviving_arms]
         mu_hat[surviving_arms] *= scalars  #rescale
-
-        # Brute force computation
-        mu_hat[compute_exactly_indices] = atoms[compute_exactly_indices] @ query
-        d_used[compute_exactly_indices] = d
     
     if verbose: 
       best_arm_budget = np.sum(d_used) - np.sum(prev_d_used)

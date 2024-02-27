@@ -49,9 +49,6 @@ def check_correctness(
     """
     not_within = 0
     num_exp = len(naive_results)
-
-    import ipdb; ipdb.set_trace()
-
     for i in range(num_exp):
         naive_logit = naive_results[i].item()
         ada_logit = adaptive_results[i].item()
