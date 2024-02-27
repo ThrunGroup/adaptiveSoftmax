@@ -174,7 +174,7 @@ def find_topk_arms(
 
         surviving = (mu_hat + c_interval) >= lower_bound
         mask = mask & surviving
-        surviving_arms = np.nonzero(mask)[0]    # TODO: can contain mu's that were bruteforced...
+        surviving_arms = np.nonzero(mask)[0]   
 
         # revive eliminated arms if we have less than k surviving arms
         if len(surviving_arms) <= k - num_found:
@@ -197,8 +197,10 @@ def find_topk_arms(
               coordinates = np.random.choice(d, p=dist, size=batch_size)
               mu_update[i] = atoms[arm, coordinates] @ query[coordinates]  
               d_used[arm] += batch_size          
+
+            # no update needed for bruteforced arms
             else: 
-               mu_update[i] = 0     # no update needed for bruteforced arms
+               mu_update[i] = 0     
 
         # update mu_hat
         scalars = d / d_used[surviving_arms]

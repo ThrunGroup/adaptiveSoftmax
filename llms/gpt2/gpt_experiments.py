@@ -268,7 +268,6 @@ def run_experiment(
             naive_ll = F.softmax(WIKITEXT_BETA * flattened_naive_logits, dim=1)  # TODO: should be (batch_size, 1)
             naive_budget = naive_shape[0] * naive_shape[1]
 
-            import ipdb; ipdb.set_trace()
             naive_ll = naive_ll[-1, target_id]  # just for the target
             adaptive_ll, adaptive_budget = adaptive_model(
                 input_ids,
