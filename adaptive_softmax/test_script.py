@@ -43,6 +43,7 @@ def normalization_estimation_test(
         delta=delta / 3,
         sigma=sigma,
         beta=beta,
+        # dist=np.ones(len(A)), #TODO(@Ryank): Should this be here?
     )
     S_estimate = np.sum(np.exp(beta * mu_hat_norm))
 
