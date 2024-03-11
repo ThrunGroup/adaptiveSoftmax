@@ -3,11 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import Tuple, Any
 
-dir_path = os.path.dirname(os.path.abspath(__file__))
-debug_path = os.path.join(dir_path, "debug")
-log_file_path = os.path.join(dir_path, "debug", "log.txt")
 
-from .constants import (
+from constants import (
     DEBUG,
     DEV_BY,
     DEV_RATIO,
@@ -15,14 +12,14 @@ from .constants import (
     IMPORTANCE,
 )
 
-np.random.seed(42)
-
 
 def approx_sigma(
     A: np.ndarray,
     x: np.ndarray,
     num_samples: Any = None,
     importance: bool = IMPORTANCE,
+    log_file_path: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug", "log.txt"),
+    debug_path: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug"),
 ) -> float:
     """
     Function to approximate sigma.
@@ -85,6 +82,7 @@ def get_importance_errors(
     gamma: np.ndarray,
     alpha: np.ndarray,
     beta: float,
+    log_file_path: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug", "log.txt"),
 ) -> Tuple[float, float]:
     norm_mu = mu - mu.max()
 
@@ -111,6 +109,7 @@ def get_fs_errors(
     mu: np.ndarray,
     mu_hat: np.ndarray,
     beta: float,
+    log_file_path: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug", "log.txt"),
 ) -> Tuple[float, float]:
     f_error = np.sum(np.exp(beta * mu_hat) * (beta * (mu - mu_hat)))
     f_error /= np.sum(np.exp(mu))
@@ -131,6 +130,7 @@ def plot_norm_budgets(
     g_error: np.ndarray,
     f_error: np.ndarray,
     s_error: np.ndarray,
+    debug_path: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug"),
 ):
     text = f"alpha err: {a_error:.3f}\n"
     text += f"gamma err: {g_error:.3f}\n"
@@ -152,6 +152,7 @@ def plot_norm_budgets(
 def compare_true_arms(
     mu: np.ndarray,
     best_arms: np.ndarray,
+    log_file_path: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug", "log.txt"),
 ) -> Tuple[np.ndarray, np.ndarray]:
     best_arms.sort()
     true_best_arms = np.argsort(mu)[-len(best_arms) :]

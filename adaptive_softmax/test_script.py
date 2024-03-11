@@ -1,6 +1,6 @@
 import numpy as np
-from typing import Tuple
 import torch
+from typing import Tuple
 
 from adasoftmax import (
     ada_softmax,
@@ -186,8 +186,6 @@ def main():
     NUM_TESTS = 100
     verbose = True
 
-    # constant for adjusting gain.
-    c = 5
     # matrix, vector size
     n = 10
     d = int(3e4)

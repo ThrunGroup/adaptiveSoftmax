@@ -2,7 +2,7 @@ import os
 import numpy as np
 from typing import Tuple
 
-from .utils import (
+from utils import (
     approx_sigma,
     get_importance_errors,
     get_fs_errors,
@@ -10,7 +10,7 @@ from .utils import (
     compare_true_arms,
 )
 
-from .constants import (
+from constants import (
     BATCH_SIZE,
     TOP_K,
     BETA,
@@ -22,9 +22,6 @@ from .constants import (
     S_ORDER_CONST,
     DEBUG,
 )
-
-np.random.seed(42)
-
 
 def estimate_mu_hat(
     atoms: np.ndarray,
@@ -316,3 +313,6 @@ def ada_softmax(
     budget = np.sum(d_used).item()
 
     return best_indices, y_hat / s_hat, budget
+
+if __name__ == "__main__":
+    np.random.seed(42)
