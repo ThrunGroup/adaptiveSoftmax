@@ -1,4 +1,7 @@
 import numpy as np
+from typing import Tuple
+import torch
+
 from adasoftmax import (
     ada_softmax,
     estimate_mu_hat,
@@ -6,31 +9,15 @@ from adasoftmax import (
     approx_sigma,
 )
 
-from typing import Tuple
-import torch
-
-NUM_TESTS = 100
-verbose = True
-
-# constant for adjusting gain.
-c = 5
-# matrix, vector size
-n = 10
-d = int(3e4)
-
-# adaptive algorithm hyperparameters
-beta = 1
-epsilon = 0.1
-delta = 0.01
-num_sigma_samples = d
-k = 1
-
 
 def normalization_estimation_test(
     true_mu: np.ndarray,
     A: np.ndarray,
     x: np.ndarray,
     sigma: float,
+    beta: float,
+    delta: float,
+    epsilon: float,
 ) -> Tuple[float, bool, int]:
     """
     Tests the correctness of normalization constant(referred as S below) estimation.
@@ -72,6 +59,9 @@ def topk_identification_test(
     true_mu: np.ndarray,
     A: np.ndarray,
     x: np.ndarray,
+    n: int,
+    k: int,
+    delta: float,
     sigma: float,
 ) -> Tuple[bool, int]:
     """
@@ -123,6 +113,11 @@ def ada_softmax_test(
     true_mu: np.ndarray,
     A: np.ndarray,
     x: np.ndarray,
+    k: int,
+    d: int,
+    beta: float,
+    delta: float,
+    epsilon: float,
 ) -> Tuple[float, bool, bool, int]:
     """
     Tests the correctness of the adaSoftmax algorithm.
@@ -187,7 +182,23 @@ def ada_softmax_test(
     )
 
 
-if __name__ == "__main__":
+def main():
+    NUM_TESTS = 100
+    verbose = True
+
+    # constant for adjusting gain.
+    c = 5
+    # matrix, vector size
+    n = 10
+    d = int(3e4)
+
+    # adaptive algorithm hyperparameters
+    beta = 1
+    epsilon = 0.1
+    delta = 0.01
+    num_sigma_samples = d
+    k = 1
+
     np.random.seed(42)
 
     # test result aggregates for softmax normalization estimation
@@ -206,7 +217,6 @@ if __name__ == "__main__":
 
     for i in range(NUM_TESTS):
         # generate ground truth mu randomly
-        true_mu = np.ones(n)
         true_mu = np.random.uniform(1, 100, size=(n,))
         true_mu /= 10
 
@@ -229,6 +239,9 @@ if __name__ == "__main__":
                 A=A,
                 x=x,
                 sigma=sigma,
+                beta=beta,
+                delta=delta,
+                epsilon=epsilon,
             )
         )
 
@@ -243,6 +256,9 @@ if __name__ == "__main__":
             true_mu=true_mu,
             A=A,
             x=x,
+            n=n,
+            k=k,
+            delta=delta,
             sigma=sigma,
         )
 
@@ -257,6 +273,11 @@ if __name__ == "__main__":
                 true_mu=true_mu,
                 A=A,
                 x=x,
+                k=k,
+                d=d,
+                beta=beta,
+                delta=delta,
+                epsilon=epsilon,
             )
         )
 
@@ -291,3 +312,7 @@ if __name__ == "__main__":
         wrong_softmax_estimate_numbers / NUM_TESTS,
     )
     print("budget for softmax estimation:", total_softmax_budget / NUM_TESTS)
+
+
+if __name__ == "__main__":
+    main()

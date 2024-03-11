@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from typing import Union, Tuple
+from typing import Union, Tuple, Optional
 
 from adaptive_softmax.adasoftmax import ada_softmax
 
