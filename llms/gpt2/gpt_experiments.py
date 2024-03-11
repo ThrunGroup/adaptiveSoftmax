@@ -1,18 +1,19 @@
 import torch
 import torch.nn.functional as F
 import numpy as np
-import os, sys
+import os
+import sys
 import matplotlib.pyplot as plt
 
 from transformers import GPT2LMHeadModel, GPT2TokenizerFast
 from datasets import load_dataset
-from copy import deepcopy
+import copy
 from typing import Union, Tuple, Optional, Callable, List
 from tqdm import tqdm
 
 sys.path.append("/content/drive/MyDrive")
 from adaptive_softmax.adasoftmax import ada_softmax
-from .gpt_constants import (
+from gpt_constants import (
     MULTIPLICATIVE_ERROR,
     DELTA_ERROR,
     WIKITEXT_BETA,
@@ -22,7 +23,7 @@ from .gpt_constants import (
 def load_from_datasets(
     dataset_name: str = "wikitext",
     num_samples: int = None,
-):
+) -> np.ndarray:
     """
     Given dataset_name, load the dataset with the correct number of samples
     """
@@ -32,7 +33,7 @@ def load_from_datasets(
         if num_samples is None:
             num_samples = len(test_set)
     else:
-        print("doesn't support any other datasets as of now")
+        print("We only support wikitext for now")
 
     return test_set[:num_samples]
 
@@ -40,6 +41,7 @@ def load_from_datasets(
 def check_correctness(
     naive_results: torch.Tensor,
     adaptive_results: torch.Tensor,
+        eps: float = MULTIPLICATIVE_ERROR,
     verbose: bool = False,
 ) -> bool:
     """
@@ -53,12 +55,12 @@ def check_correctness(
     for i in range(num_exp):
         naive_logit = naive_results[i].item()
         ada_logit = adaptive_results[i].item()
-        if abs(naive_logit - ada_logit) > MULTIPLICATIVE_ERROR * naive_logit:
+        if abs(naive_logit - ada_logit) > eps * naive_logit:
             not_within += 1
 
     if verbose:
         print(
-            f"=> delta error is {not_within / num_exp} for epsilon = {MULTIPLICATIVE_ERROR}"
+            f"=> delta error is {not_within / num_exp} for epsilon = {eps}"
         )
 
     return (not_within / num_exp) < DELTA_ERROR
@@ -72,14 +74,18 @@ def get_gains(
 ) -> float:
     """
     Given both naive and adaptive budget, find the proportional gains.
+
     :param true_mu: used to get the upper bound on gain (this is a loose proxy)
     :param naive_budget: the naive budget
     :param adaptive_budget: the adaptive budget
     :param verbose: whether you print theoretical gain
     """
     empirical_gain = naive_budget / adaptive_budget
+
     if verbose:
         n_classes = true_mu.shape[0]
+
+        # TODO(@ryank): Explain where this computation comes from. What eqn in the paper?
         l2 = np.sum(np.exp(2 * (true_mu - np.max(true_mu))))
         l1 = np.sum(np.exp(true_mu - np.max(true_mu))) ** 2
         theoretical_gain = n_classes * l2 / l1
@@ -89,8 +95,76 @@ def get_gains(
 
     return empirical_gain
 
+def debug(
+        A,
+        x,
+):
+    # Question 1: Visualize variance
+    data = A @ x
+    subset = np.random.choice(data, size=100, replace=False)
+    plt.scatter(range(len(subset)), subset)
+    plt.title('mu values')
+    plt.savefig('arms.png')
 
-def get_adaptive_forward(model) -> Callable:
+    # Question 2: Investigate variance reduction from importance sampling
+    num_samples = 1000
+    num_rows = A.shape[0]
+    d = A.shape[1]
+
+    unif_var = np.zeros(num_rows)
+    uni_dist = np.ones(d)/d
+    importance_var = np.zeros(num_rows)
+    imp_dist = np.abs(x)/np.sum(np.abs(x))
+    var_array = []
+
+    for unif_mix_factor in np.linspace(0, 1, num=10):
+      for i in range(num_rows):
+        a = A[i]
+
+        # Uniform sampling
+        coord = np.random.choice(d, p=uni_dist, size=num_samples)
+        samples = a[coord]*x[coord]/uni_dist[coord]
+        unif_var[i] = np.var(samples)
+
+        # Importance sampling
+        prob_dist = (1-unif_mix_factor) * imp_dist + unif_mix_factor * uni_dist
+        prob_dist = prob_dist/prob_dist.sum()  # numerical stability issues before
+        coord = np.random.choice(d, p=prob_dist, size=num_samples)
+        samples = a[coord] * x[coord] / prob_dist[coord]
+        importance_var[i] = np.var(samples)
+        mean_var = np.mean(importance_var)
+        var_var = np.var(importance_var)
+
+      var_array.append(var_var)
+      print("factor: ", unif_mix_factor)
+      print("mean variance: ", mean_var)
+      print("variance of variance: ", var_var)
+
+    plt.scatter(np.linspace(0, 1, num=10), var_array)
+    plt.title("unif_mix_factor to variance")
+    plt.savefig("unif_mix_factor to variance.png")
+
+    print("mean (uniVar, impVar)", (np.mean(unif_var),np.mean(importance_var)))
+    print("variance of the variances", np.var(importance_var))
+    plt.scatter(range(len(importance_var)), importance_var)
+    plt.title("clustering of importance variances per arm")
+    plt.savefig("imp_variances.png")
+
+    # Question 3: Does best-arm identification even make sense?
+    mu = torch.tensor(A @ x)
+    softmax_vals = F.softmax(mu, dim=0)
+    sorted_vals = np.sort(softmax_vals)[::-1]
+    cumsum = np.cumsum(sorted_vals)
+
+    print("total entries: ", len(mu))
+    print("minimum entry that's greater than : ", np.argmax(cumsum > 0.5))
+    plt.scatter(range(len(mu)), cumsum)
+    plt.title("cumsum of softmax values")
+    plt.savefig("softmax values.png")
+
+def get_adaptive_forward(
+        model
+) -> Callable:
     """
     Function that redefines the forward pass for GPT2. We do this by switching out
     lm_head + CELoss to log(adaSoftmax) + NLLLoss. The input parameters are the same throughout and the forward
@@ -119,6 +193,27 @@ def get_adaptive_forward(model) -> Callable:
         use_importance: bool = False,
         verbose: bool = False,
     ) -> torch.Tensor:
+        """
+        TODO(@Ryank): Add documentation
+
+        :param input_ids:
+        :param past_key_values:
+        :param attention_mask:
+        :param token_type_ids:
+        :param position_ids:
+        :param head_mask:
+        :param inputs_embeds:
+        :param encoder_hidden_states:
+        :param encoder_attention_mask:
+        :param labels:
+        :param use_cache:
+        :param output_attentions:
+        :param output_hidden_states:
+        :param return_dict:
+        :param use_importance:
+        :param verbose:
+        :return:
+        """
         labels = None  # we're only concerned with the log likelihood
         transformer_outputs = model.transformer(
             input_ids,
@@ -144,72 +239,8 @@ def get_adaptive_forward(model) -> Callable:
         A = model.lm_head.weight.data.cpu().numpy()  # size = (embed, vocab_size)
         x = flattened_states[-1].cpu().numpy()
 
-        # [START DEBUG]
-
-        ### 1. VISUALIZING VARIANCE
-        # data = A @ x
-        # subset = np.random.choice(data, size=100, replace=False)
-        # plt.scatter(range(len(subset)), subset)
-        # plt.title('mu values')
-        # plt.savefig('arms.png')
-
-        ### 2. VARIANCE REDUCTION FROM IMPORTANCE SAMPLING
-        # numSamples = 1000
-        # numRows = A.shape[0]
-        # d = A.shape[1]
-
-        # unifVar = np.zeros(numRows)
-        # uniDist = np.ones(d)/d
-        # importanceVar = np.zeros(numRows)
-        # impDist = np.abs(x)/np.sum(np.abs(x))
-        # var_array = []
-
-        # for unifMixFactor in np.linspace(0, 1, num=10):
-        #   for i in range(numRows):
-        #     a = A[i]
-
-        #     ### uniform sampling
-        #     coord = np.random.choice(d, p=uniDist, size=numSamples)
-        #     samples = a[coord]*x[coord]/uniDist[coord]
-        #     unifVar[i] = np.var(samples)
-
-        #     ### importance sampling
-        #     probDist = (1-unifMixFactor) * impDist + unifMixFactor * uniDist
-        #     probDist = probDist/probDist.sum()  # numerical stability issues before
-        #     coord = np.random.choice(d, p=probDist, size=numSamples)
-        #     samples = a[coord] * x[coord] / probDist[coord]
-        #     importanceVar[i] = np.var(samples)
-        #     mean_var = np.mean(importanceVar)
-        #     var_var = np.var(importanceVar)
-
-        #   var_array.append(var_var)
-        #   print("factor: ", unifMixFactor)
-        #   print("mean variance: ", mean_var)
-        #   print("variance of variance: ", var_var)
-
-        # plt.scatter(np.linspace(0, 1, num=10), var_array)
-        # plt.title("unifMixFactor to variance")
-        # plt.savefig("unifMixFactor to variance.png")
-
-        # print("mean (uniVar, impVar)", (np.mean(unifVar),np.mean(importanceVar)))
-        # print("variance of the variances", np.var(importanceVar))
-        # plt.scatter(range(len(importanceVar)), importanceVar)
-        # plt.title("clustering of importance variances per arm")
-        # plt.savefig("imp_variances.png")
-
-        ### 3. DOES BEST-ARM IDENTIFICATION EVEN MAKE SENSE?
-        # mu = torch.tensor(A @ x)
-        # softmax_vals = F.softmax(mu, dim=0)
-        # sorted_vals = np.sort(softmax_vals)[::-1]
-        # cumsum = np.cumsum(sorted_vals)
-
-        # print("total entries: ", len(mu))
-        # print("minimum entry that's greater than : ", np.argmax(cumsum > 0.5))
-        # plt.scatter(range(len(mu)), cumsum)
-        # plt.title("cumsum of softmax values")
-        # plt.savefig("softmax values.png")
-
-        # [END DEBUG]
+        if debug:
+            debug()
 
         # [NOTE] this is where our algorithm is being called!
         best_arms, z, adaptive_budget = ada_softmax(
@@ -249,7 +280,7 @@ def run_experiment(
     naive_shape = naive_model.lm_head.weight.shape  # tensor with 2 elems
 
     # replace the forward function with the adaptive forward
-    adaptive_model = deepcopy(naive_model)
+    adaptive_model = copy.deepcopy(naive_model)
     adaptive_model.forward = get_adaptive_forward(naive_model)
 
     test = load_from_datasets(dataset_name, num_samples)
