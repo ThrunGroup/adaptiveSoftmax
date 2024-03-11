@@ -10,13 +10,14 @@ from copy import deepcopy
 from typing import Union, Tuple, Optional, Callable, List
 from tqdm import tqdm
 
-sys.path.append('/content/drive/MyDrive')
+sys.path.append("/content/drive/MyDrive")
 from adaptive_softmax.adasoftmax import ada_softmax
 from .gpt_constants import (
     MULTIPLICATIVE_ERROR,
     DELTA_ERROR,
     WIKITEXT_BETA,
 )
+
 
 def load_from_datasets(
     dataset_name: str = "wikitext",
@@ -56,7 +57,9 @@ def check_correctness(
             not_within += 1
 
     if verbose:
-        print(f"=> delta error is {not_within / num_exp} for epsilon = {MULTIPLICATIVE_ERROR}" )
+        print(
+            f"=> delta error is {not_within / num_exp} for epsilon = {MULTIPLICATIVE_ERROR}"
+        )
 
     return (not_within / num_exp) < DELTA_ERROR
 
@@ -97,6 +100,7 @@ def get_adaptive_forward(model) -> Callable:
     :param: the rest are the same as the original model
     :returns: the forward pass of the model
     """
+
     def adaptive_forward(
         input_ids: Optional[torch.LongTensor] = None,
         past_key_values: Optional[Tuple[Tuple[torch.Tensor]]] = None,
@@ -115,7 +119,7 @@ def get_adaptive_forward(model) -> Callable:
         use_importance: bool = False,
         verbose: bool = False,
     ) -> torch.Tensor:
-        labels = None   # we're only concerned with the log likelihood
+        labels = None  # we're only concerned with the log likelihood
         transformer_outputs = model.transformer(
             input_ids,
             past_key_values=past_key_values,
@@ -133,23 +137,25 @@ def get_adaptive_forward(model) -> Callable:
         )
         # converting (batch, sequence, embed) -> (batch x sequence, embed)
         hidden_states = transformer_outputs[0]
-        flattened_states = hidden_states.view(-1, hidden_states.size(-1))   # TODO: currently only supports batch = 1
+        flattened_states = hidden_states.view(
+            -1, hidden_states.size(-1)
+        )  # TODO: currently only supports batch = 1
 
-        A = model.lm_head.weight.data.cpu().numpy()   # size = (embed, vocab_size)
+        A = model.lm_head.weight.data.cpu().numpy()  # size = (embed, vocab_size)
         x = flattened_states[-1].cpu().numpy()
 
-        # [START DEBUG] 
+        # [START DEBUG]
 
-        ### 1. VISUALIZING VARIANCE 
+        ### 1. VISUALIZING VARIANCE
         # data = A @ x
         # subset = np.random.choice(data, size=100, replace=False)
         # plt.scatter(range(len(subset)), subset)
         # plt.title('mu values')
-        # plt.savefig('arms.png')  
-        
+        # plt.savefig('arms.png')
+
         ### 2. VARIANCE REDUCTION FROM IMPORTANCE SAMPLING
-        # numSamples = 1000 
-        # numRows = A.shape[0] 
+        # numSamples = 1000
+        # numRows = A.shape[0]
         # d = A.shape[1]
 
         # unifVar = np.zeros(numRows)
@@ -196,7 +202,7 @@ def get_adaptive_forward(model) -> Callable:
         # softmax_vals = F.softmax(mu, dim=0)
         # sorted_vals = np.sort(softmax_vals)[::-1]
         # cumsum = np.cumsum(sorted_vals)
-        
+
         # print("total entries: ", len(mu))
         # print("minimum entry that's greater than : ", np.argmax(cumsum > 0.5))
         # plt.scatter(range(len(mu)), cumsum)
@@ -205,14 +211,13 @@ def get_adaptive_forward(model) -> Callable:
 
         # [END DEBUG]
 
-      
         # [NOTE] this is where our algorithm is being called!
         best_arms, z, adaptive_budget = ada_softmax(
             A=A,
             x=x,
             # samples_for_sigma=flattened_states.shape[0],
             samples_for_sigma=None,  # this finds the exact sigma <- debugging purposes
-            beta=WIKITEXT_BETA,   # mu is very spiky
+            beta=WIKITEXT_BETA,  # mu is very spiky
             verbose=verbose,
         )
         likelihood = torch.tensor(z)
@@ -260,19 +265,19 @@ def run_experiment(
         end_loc = min(begin_loc + max_length, seq_len)
         tokens = encodings.input_ids[:, begin_loc:end_loc].to(device)
         input_ids = tokens[:, :-1].contiguous()
-        target_id = tokens[:, -1].cpu()   # TODO: currently only allows cpu support
+        target_id = tokens[:, -1].cpu()  # TODO: currently only allows cpu support
 
         with torch.no_grad():
             naive_logits = naive_model(input_ids, labels=None, return_dict=False)[0]
             flattened_naive_logits = naive_logits.view(-1, naive_logits.size(-1))
-            naive_ll = F.softmax(WIKITEXT_BETA * flattened_naive_logits, dim=1)  # TODO: should be (batch_size, 1)
+            naive_ll = F.softmax(
+                WIKITEXT_BETA * flattened_naive_logits, dim=1
+            )  # TODO: should be (batch_size, 1)
             naive_budget = naive_shape[0] * naive_shape[1]
 
             naive_ll = naive_ll[-1, target_id]  # just for the target
             adaptive_ll, adaptive_budget = adaptive_model(
-                input_ids,
-                labels=None,
-                verbose=verbose
+                input_ids, labels=None, verbose=verbose
             )
 
         # CELoss averages the losses. But, we're only comparing likelihood
@@ -281,21 +286,23 @@ def run_experiment(
 
         if end_loc == seq_len:
             break
-        print('\n')
+        print("\n")
 
     is_correct, gain = None, None
     if exp_type == "both" or exp_type == "correctness":
         is_correct = check_correctness(naive_lls, adaptive_lls, verbose=True)
     if exp_type == "both" or exp_type == "gains":
         true_mu = flattened_naive_logits
-        gain = get_gains(true_mu.cpu().numpy(), naive_budget, adaptive_budget, verbose=True)
+        gain = get_gains(
+            true_mu.cpu().numpy(), naive_budget, adaptive_budget, verbose=True
+        )
 
     print(f"==> Experiment {exp_type} is {is_correct} with gain {gain}")
 
 
 if __name__ == "__main__":
     run_experiment(
-      num_samples=10, 
-      model_id='gpt2-xl',
-      verbose=True,
+        num_samples=10,
+        model_id="gpt2-xl",
+        verbose=True,
     )

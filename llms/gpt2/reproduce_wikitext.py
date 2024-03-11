@@ -24,7 +24,9 @@ for begin_loc in tqdm(range(0, seq_len, stride)):
     target_ids[:, :-trg_len] = -100
 
     with torch.no_grad():
-        import ipdb; ipdb.set_trace()
+        import ipdb
+
+        ipdb.set_trace()
         outputs = model(input_ids, labels=target_ids)
 
         # loss is calculated using CrossEntropyLoss which averages over valid labels
