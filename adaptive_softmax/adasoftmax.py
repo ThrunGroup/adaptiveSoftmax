@@ -44,6 +44,7 @@ def estimate_mu_hat(
     :param delta: probability of failure of estimation for S
     :param sigma: sub-gaussianity parameter for the arm pull across all arms
     :param beta: beta in the original paper
+    :param dist: For importance sampling, because we compute a distribution beforehand that we want to sample from. For uniform, we can just pass in a normalized array of np.ones
 
     :returns: mu_hat and the current cumulative budget
     """
