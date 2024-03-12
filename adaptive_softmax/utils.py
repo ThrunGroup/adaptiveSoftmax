@@ -18,7 +18,9 @@ def approx_sigma(
     x: np.ndarray,
     num_samples: Any = None,
     importance: bool = IMPORTANCE,
-    log_file_path: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug", "log.txt"),
+    log_file_path: str = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "debug", "log.txt"
+    ),
     debug_path: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug"),
 ) -> float:
     """
@@ -82,7 +84,9 @@ def get_importance_errors(
     gamma: np.ndarray,
     alpha: np.ndarray,
     beta: float,
-    log_file_path: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug", "log.txt"),
+    log_file_path: str = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "debug", "log.txt"
+    ),
 ) -> Tuple[float, float]:
     norm_mu = mu - mu.max()
 
@@ -109,7 +113,9 @@ def get_fs_errors(
     mu: np.ndarray,
     mu_hat: np.ndarray,
     beta: float,
-    log_file_path: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug", "log.txt"),
+    log_file_path: str = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "debug", "log.txt"
+    ),
 ) -> Tuple[float, float]:
     f_error = np.sum(np.exp(beta * mu_hat) * (beta * (mu - mu_hat)))
     f_error /= np.sum(np.exp(mu))
@@ -152,7 +158,9 @@ def plot_norm_budgets(
 def compare_true_arms(
     mu: np.ndarray,
     best_arms: np.ndarray,
-    log_file_path: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug", "log.txt"),
+    log_file_path: str = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "debug", "log.txt"
+    ),
 ) -> Tuple[np.ndarray, np.ndarray]:
     best_arms.sort()
     true_best_arms = np.argsort(mu)[-len(best_arms) :]

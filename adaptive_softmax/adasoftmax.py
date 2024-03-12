@@ -23,6 +23,7 @@ from constants import (
     DEBUG,
 )
 
+
 def estimate_mu_hat(
     atoms: np.ndarray,
     query: np.ndarray,
@@ -314,6 +315,7 @@ def ada_softmax(
     budget = np.sum(d_used).item()
 
     return best_indices, y_hat / s_hat, budget
+
 
 if __name__ == "__main__":
     np.random.seed(42)
