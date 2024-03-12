@@ -43,7 +43,7 @@ def normalization_estimation_test(
         delta=delta / 3,
         sigma=sigma,
         beta=beta,
-        # dist=np.ones(len(A)), #TODO(@Ryank): Should this be here?
+        dist=np.ones(len(A[0])) / sum(np.ones(len(A[0]))),
     )
     S_estimate = np.sum(np.exp(beta * mu_hat_norm))
 
@@ -97,6 +97,7 @@ def topk_identification_test(
         mu_hat=topk_start_mu_hat,
         d_used=topk_start_budget,
         k=k,
+        dist=np.ones(len(A[0])) / sum(np.ones(len(A[0]))),
     )
 
     # Test results
@@ -229,7 +230,7 @@ def main():
             print(f"running {i+1}th test")
 
         # calculate true sigma
-        sigma = approx_sigma(A, x, num_sigma_samples)
+        sigma, _dist = approx_sigma(A, x, num_sigma_samples)
 
         # normalization constant estimation test
         S_error, S_within_bound, normalization_estimation_budget = (
