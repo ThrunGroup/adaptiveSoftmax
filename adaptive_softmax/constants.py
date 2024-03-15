@@ -1,8 +1,10 @@
 # algorithm constants
 TOP_K = 1
 BETA = 1.0
-DEFAULT_EPSILON = 0.1
+DEFAULT_EPSILON = 0.1   
 DEFAULT_DELTA = 0.01
+EPSILON_SCALE = 4   # refer to algo 1 in paper
+DELTA_SCALE = 3
 BATCH_SIZE = 128
 IMPORTANCE = True  # toggle this for importance sampling
 
@@ -17,3 +19,14 @@ DEBUG = False
 DEV_BY = 1  # std deviations
 DEV_RATIO = 0.5  # setting smaller leads to more outliers
 NUM_BINS = 10
+
+# pytest constants
+NUM_TESTS = 100
+NUM_ROWS = 10
+NUM_COLS = int(3e4)
+BUDGET_IMPROVEMENT = 1.0    # improve the budget by
+TEST_BETA = 1.0
+TEST_EPSILON = 0.1
+TEST_DELTA = 0.01
+TEST_TOPK = 1
+TEST_SAMPLES_FOR_SIGMA = None   # this uses all d
