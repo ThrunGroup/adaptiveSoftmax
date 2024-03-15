@@ -41,7 +41,6 @@ def approx_sigma(
         num_samples = d
 
     if importance:
-        print("\nIMPORTANCE SAMPLING...")
         factor = 0.1
         importance = np.abs(x) / np.sum(np.abs(x))
         dist = (1 - factor) * importance + factor * dist
@@ -50,7 +49,6 @@ def approx_sigma(
     coordinates = np.random.choice(d, p=dist, size=num_samples, replace=False)
     elmul = A[:, coordinates] * x[coordinates] / dist[coordinates]
     sigma = np.mean(np.std(elmul, axis=1))  # empirical variance (maybe use median?)
-    print("sigma is ", sigma)
 
     if DEBUG:
         with open(log_file_path, "a") as f:

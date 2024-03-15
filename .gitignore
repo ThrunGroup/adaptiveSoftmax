@@ -12,3 +12,4 @@ input.txt
 log.txt
 *.png
 softmax/
+venv/

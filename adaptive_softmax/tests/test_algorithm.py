@@ -15,7 +15,7 @@ from constants import (
 )
 
 
-def test_single_algorithm(
+def single_run(
     A: np.ndarray,
     x: np.ndarray,
     k: int,
@@ -25,8 +25,8 @@ def test_single_algorithm(
 ) -> Tuple[bool, int]:
     # TODO: add the most easiest test cases
     """
-    Tests the correctness of the adaSoftmax algorithm.
-    :returns: correctness, total budget
+    single run of the adaSoftmax algorithm.
+    :returns: whether eps is in bounds, total budget
     """
     true_mu = A @ x
     true_s = np.sum(np.exp(beta * true_mu))
@@ -49,9 +49,13 @@ def test_single_algorithm(
     # Test results
     z_error = np.abs(z_hat[indices] - true_z[true_topk])
     error = np.max(z_error / true_z[true_topk])  # TODO: should we be taking the max?
-    is_correct = error <= epsilon  
+    in_bounds = error <= epsilon  
 
-    return is_correct, budget
+    return in_bounds, budget
+
+
+def test_epsilon() -> None:
+    pass
 
 
 def test_delta(num_tests: int = NUM_TESTS) -> None:
@@ -68,8 +72,7 @@ def test_delta(num_tests: int = NUM_TESTS) -> None:
         A = np.outer(true_mu, x) / np.sum(x**2) + Z
         A = A - np.outer(A @ x - true_mu, np.ones(d) / np.sum(x))
 
-        is_correct, budget = test_single_algorithm(
-            true_mu=true_mu,
+        is_correct, budget = single_run(
             A=A,
             x=x,
             k=TEST_TOPK,

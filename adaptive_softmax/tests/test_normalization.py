@@ -1,5 +1,4 @@
 import numpy as np
-import torch
 from typing import Tuple
 
 from adasoftmax import (
