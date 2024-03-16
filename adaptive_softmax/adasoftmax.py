@@ -23,6 +23,7 @@ from constants import (
     F_ORDER_CONST,
     S_ORDER_CONST,
     DEBUG,
+    IMPORTANCE,
 )
 
 
@@ -237,6 +238,7 @@ def ada_softmax(
     delta: float = DEFAULT_DELTA,
     beta: float = BETA,
     k: int = TOP_K,
+    importance: bool = IMPORTANCE,
     verbose: bool = VERBOSE,
 ) -> Tuple[np.ndarray, np.ndarray, int]:
     """
@@ -262,7 +264,7 @@ def ada_softmax(
             f.write("\n########### starting new experiment ###########\n")
 
     n, d = A.shape
-    sigma, dist = approx_sigma(A, x, samples_for_sigma)
+    sigma, dist = approx_sigma(A, x, samples_for_sigma, importance)
 
     # Algorithm 1 in the paper. Denominator (i.e. s_hat) estimation
     mu_hat, d_used = estimate_mu_hat(

@@ -1,49 +1,85 @@
 import numpy as np
-from typing import Tuple
 
-from adasoftmax import (
-    ada_softmax,
-    estimate_mu_hat,
-    find_topk_arms,
-    approx_sigma,
+from utils import approx_sigma
+from .test_utils import (
+    construct_sanity_example,
+    construct_random_example,
+    single_run_normalization,
 )
 from constants import (
-    EPSILON_SCALE,
+    NUM_TESTS,
+    NUM_ROWS, 
+    NUM_COLS,
+    BUDGET_IMPROVEMENT,
     DELTA_SCALE,
+
+    TEST_BETA,
+    TEST_DELTA,
+    TEST_EPSILON,
+    TEST_SEED,
+    TEST_IMPORTANCE,
 )
 
-def test_single_normalization(
-    A: np.ndarray,
-    x: np.ndarray,
-    sigma: float,
-    beta: float,
-    delta: float,
-    epsilon: float,
-) -> Tuple[bool, int]:
-    """
-    Tests whether normalization constant S is in the epsilon bounds.
-    :returns: correctness, total budget
-    """
-    true_mu = A @ x
-    uniform = np.ones(len(x)) / len(x)
-    true_s = np.sum(np.exp(beta * true_mu))
 
-    mu, budget = estimate_mu_hat(
-        atoms=A,
-        query=x,
-        epsilon=epsilon / EPSILON_SCALE,
-        delta=delta / DELTA_SCALE,
+def test_epsilon(
+    sanity_check: bool = True,
+    n: int = NUM_ROWS,
+    d: int = NUM_COLS,
+    seed: int = TEST_SEED,
+) -> None:
+    """
+    Testing epsilon bounds of normalization constant S
+    """
+    np.random.seed(seed)
+    if sanity_check:
+        A, x = construct_sanity_example(n, d)
+    else:
+        A, x = construct_random_example(n, d, mu=None)
+
+    sigma, _ = approx_sigma(A, x, importance=TEST_IMPORTANCE)
+    in_bounds, error, budget = single_run_normalization(
+        A=A,
+        x=x,
         sigma=sigma,
-        beta=beta,
-        dist=uniform,
+        beta=TEST_BETA,
+        delta=TEST_DELTA,
+        epsilon=TEST_EPSILON,
     )
 
-    s_hat = np.sum(np.exp(beta * mu))
-    error = np.abs(s_hat - true_s) / true_s
-    is_correct = (error <= epsilon)  
-    total_budget = np.sum(budget).item()
+    assert (in_bounds)
+    assert (budget < n * d / BUDGET_IMPROVEMENT)
 
-    return is_correct, total_budget, 
+
+def test_delta(
+    num_tests: int = NUM_TESTS,
+    n: int = NUM_ROWS,
+    d: int = NUM_COLS,
+    seed: int = TEST_SEED,
+) -> None:
+    """
+    Testing delta bounds of normalization constant S
+    """
+    np.random.seed(seed)
+    total_wrong = 0
+    total_budget = 0
+
+    for i in range(num_tests):
+        A, x = construct_random_example(n, d, mu=None)
+        sigma, _ = approx_sigma(A, x, importance=TEST_IMPORTANCE)
+
+        in_bounds, error, budget = single_run_normalization(
+            A=A,
+            x=x,
+            sigma=sigma,
+            beta=TEST_BETA,
+            delta=TEST_DELTA,
+            epsilon=TEST_EPSILON,
+        )
+        total_wrong += int(not in_bounds)
+        total_budget += budget
+
+    assert (total_wrong / num_tests < TEST_DELTA / DELTA_SCALE)
+    assert (total_budget < n * d * num_tests / BUDGET_IMPROVEMENT)
 
 
 

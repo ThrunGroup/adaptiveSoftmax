@@ -10,6 +10,7 @@ from constants import (
     DEV_RATIO,
     NUM_BINS,
     IMPORTANCE,
+    SIGMA_BUFFER,
 )
 
 
@@ -48,7 +49,10 @@ def approx_sigma(
 
     coordinates = np.random.choice(d, p=dist, size=num_samples, replace=False)
     elmul = A[:, coordinates] * x[coordinates] / dist[coordinates]
-    sigma = np.mean(np.std(elmul, axis=1))  # empirical variance (maybe use median?)
+    sigma = np.mean(np.std(elmul, axis=1))  # TODO: maybe use median?
+
+    # for toy example case where sigma = 0
+    sigma = max(sigma, SIGMA_BUFFER)
 
     if DEBUG:
         with open(log_file_path, "a") as f:

@@ -1,7 +1,10 @@
 import numpy as np
-from typing import Tuple
 
-from adasoftmax import ada_softmax
+from .test_utils import (
+    construct_sanity_example,
+    construct_random_example,
+    single_run_adasoftmax
+)
 from constants import (
     NUM_TESTS,
     NUM_ROWS,
@@ -10,79 +13,68 @@ from constants import (
     TEST_EPSILON,
     TEST_DELTA,
     TEST_TOPK,
-    TEST_SAMPLES_FOR_SIGMA,
+    TEST_SEED,
     BUDGET_IMPROVEMENT,
+    TEST_IMPORTANCE,
 )
 
-
-def single_run(
-    A: np.ndarray,
-    x: np.ndarray,
-    k: int,
-    beta: float,
-    delta: float,
-    epsilon: float,
-) -> Tuple[bool, int]:
-    # TODO: add the most easiest test cases
+def test_epsilon(
+    sanity_check: bool = True,
+    n: int = NUM_ROWS,
+    d: int = NUM_COLS,
+    seed: int = TEST_SEED,
+) -> None:
     """
-    single run of the adaSoftmax algorithm.
-    :returns: whether eps is in bounds, total budget
+    Testing epsilon bounds of algorithm
     """
-    true_mu = A @ x
-    true_s = np.sum(np.exp(beta * true_mu))
-    true_z = np.exp(beta * true_mu) / true_s
-    true_topk = np.sort(np.argpartition(true_mu, -k)[-k:])
-    samples_for_sigma = TEST_SAMPLES_FOR_SIGMA
+    np.random.seed(seed)
+    if sanity_check:
+        A, x = construct_sanity_example(n, d)
+    else:
+        A, x = construct_random_example(n, d, mu=None)
 
-    indices, z_hat, budget = ada_softmax(
+    in_bounds, error, budget = single_run_adasoftmax(
         A=A,
         x=x,
-        epsilon=epsilon,
-        delta=delta,
-        samples_for_sigma=samples_for_sigma,
-        beta=beta,
-        k=k,
-        verbose=False,
+        k=TEST_TOPK,
+        beta=TEST_BETA,
+        delta=TEST_DELTA,
+        epsilon=TEST_EPSILON,
+        importance=TEST_IMPORTANCE,
     )
-    indices = np.sort(indices)
 
-    # Test results
-    z_error = np.abs(z_hat[indices] - true_z[true_topk])
-    error = np.max(z_error / true_z[true_topk])  # TODO: should we be taking the max?
-    in_bounds = error <= epsilon  
+    assert (in_bounds)
+    assert (budget < n * d / BUDGET_IMPROVEMENT)
 
-    return in_bounds, budget
-
-
-def test_epsilon() -> None:
-    pass
-
-
-def test_delta(num_tests: int = NUM_TESTS) -> None:
-    np.random.seed(42)
-    n, d = NUM_ROWS, NUM_COLS
+    
+def test_delta(
+    num_tests: int = NUM_TESTS,
+    n: int = NUM_ROWS,
+    d: int = NUM_COLS,
+    seed: int = TEST_SEED,
+) -> None:
+    """
+    Testing delta bounds of algorithm
+    """
+    np.random.seed(seed)
     total_wrong = 0
     total_budget = 0
 
     for i in range(num_tests):
-        # construct A and x such that A @ x = true_mu
-        true_mu = np.random.uniform(1, 100, size=(n,)) / n
-        x = np.random.uniform(low=0.94, high=1, size=d)
-        Z = np.random.normal(loc=0, scale=1 / d, size=(n, d))
-        A = np.outer(true_mu, x) / np.sum(x**2) + Z
-        A = A - np.outer(A @ x - true_mu, np.ones(d) / np.sum(x))
+        A, x = construct_random_example(n, d, mu=None)
 
-        is_correct, budget = single_run(
+        in_bounds, error, budget = single_run_adasoftmax(
             A=A,
             x=x,
             k=TEST_TOPK,
             beta=TEST_BETA,
             delta=TEST_DELTA,
             epsilon=TEST_EPSILON,
+            importance=TEST_IMPORTANCE,
         )
-        total_wrong += int(is_correct)
+        total_wrong += int(not in_bounds)
         total_budget += budget
 
     assert (total_wrong / num_tests < TEST_DELTA)
-    assert (total_budget <= n * d / BUDGET_IMPROVEMENT)
+    assert (total_budget < n * d * num_tests / BUDGET_IMPROVEMENT)
     

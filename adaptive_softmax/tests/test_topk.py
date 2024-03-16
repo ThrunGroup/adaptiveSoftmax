@@ -1,45 +1,94 @@
 import numpy as np
-from typing import Tuple
 
-from adasoftmax import (
-    find_topk_arms,
+from utils import approx_sigma
+from .test_utils import (
+    construct_sanity_example,
+    construct_random_example,
+    single_run_topk,
 )
 from constants import (
+    NUM_TESTS,
+    NUM_ROWS, 
+    NUM_COLS,
+    BUDGET_IMPROVEMENT,
     DELTA_SCALE,
+
+    TEST_BETA,
+    TEST_DELTA,
+    TEST_EPSILON,
+    TEST_SEED,
+    TEST_TOPK,
+    TEST_IMPORTANCE,
 )
 
-def test_single_topk(
-    A: np.ndarray,
-    x: np.ndarray,
-    n: int,
-    k: int,
-    delta: float,
-    sigma: float,
-) -> Tuple[bool, np.ndarray, int]:
-    """
-    Tests whether top k algorithm returns correct indices
-    :returns: correctness, indices, total_budget
-    """
-    # these are arrays
-    true_mu = A @ x
-    uniform = np.ones(len(x)) / len(x)
-    true_topk = np.sort(np.argpartition(true_mu, -k)[-k:])
 
-    # in full algorithm, these values are obtained from estimate_mu_hat
-    starting_mu = true_mu  # TODO: is this the right thing to do?
-    starting_budget = np.ones(n).astype(np.int64)  # zero arms pulled
+def test_epsilon(
+    sanity_check: bool = True,
+    n: int = NUM_ROWS,
+    d: int = NUM_COLS,
+    seed: int = TEST_SEED,
+) -> None:
+    """
+    Just keeping naming consistent. There are not error margins here, 
+    this is testing whether we retrieve the best k arms. 
+    """
+    np.random.seed(seed)
+    if sanity_check:
+        A, x = construct_sanity_example(n, d)
+    else:
+        A, x = construct_random_example(n, d, mu=None)
 
-    topk_hat, _, budgets = find_topk_arms(
-        atoms=A,
-        query=x,
+    sigma, _ = approx_sigma(A, x, importance=TEST_IMPORTANCE)
+    correct, budget = single_run_topk(
+        k=TEST_TOPK,
+        A=A,
+        x=x,
         sigma=sigma,
-        delta=delta / DELTA_SCALE,
-        mu_hat=starting_mu,
-        d_used=starting_budget,
-        k=k,
-        dist=uniform,
+        delta=TEST_DELTA,
+        
+        # TODO: what should I set these to?
+        starting_mu=None,
+        starting_budget=None,
     )
 
-    is_correct = np.allclose(np.sort(topk_hat), true_topk)
-    total_budget = np.sum(budgets).item()
-    return is_correct, total_budget
+    assert (correct)
+    assert (budget < n * d / BUDGET_IMPROVEMENT)
+
+
+def test_delta(
+    num_tests: int = NUM_TESTS,
+    n: int = NUM_ROWS,
+    d: int = NUM_COLS,
+    seed: int = TEST_SEED,
+) -> None:
+    """
+    Testing delta bounds of topk arms
+    """
+    np.random.seed(seed)
+    total_wrong = 0
+    total_budget = 0
+
+    for i in range(num_tests):
+        A, x = construct_random_example(n, d, mu=None)
+        sigma, _ = approx_sigma(A, x, importance=TEST_IMPORTANCE)
+
+        correct, budget = single_run_topk(
+            k=TEST_TOPK,
+            A=A,
+            x=x,
+            sigma=sigma,
+            delta=TEST_DELTA,
+            
+            # TODO: what should I set these to?
+            starting_mu=None,
+            starting_budget=None,
+        )
+        print(i)
+        total_wrong += int(not correct)
+        total_budget += budget
+
+    assert (total_wrong / num_tests < TEST_DELTA / DELTA_SCALE)
+    assert (total_budget < n * d * num_tests / BUDGET_IMPROVEMENT)
+
+
+
