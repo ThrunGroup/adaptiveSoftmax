@@ -84,9 +84,10 @@ def get_gains(
 
     if verbose:
         n_classes = true_mu.shape[0]
+        mu_stable = true_mu - np.max(true_mu)   # for numerical stability
 
         # TODO(@ryank): Explain where this computation comes from. What eqn in the paper?
-        l2 = np.sum(np.exp(2 * (true_mu - np.max(true_mu))))
+        l2 = np.sum(np.exp(2 * mu_stable))
         l1 = np.sum(np.exp(true_mu - np.max(true_mu))) ** 2
         theoretical_gain = n_classes * l2 / l1
 
@@ -194,7 +195,7 @@ def get_adaptive_forward(
         verbose: bool = False,
     ) -> torch.Tensor:
         """
-        TODO(@Ryank): Add documentation
+        [NOTE] This is the forward function of GPT2 unchanged. 
 
         :param input_ids:
         :param past_key_values:
@@ -273,7 +274,6 @@ def run_experiment(
     :param model_id: the model id of the gpt2 series to run experiment on
     """
     # TODO: currently only works on batch_size = 1
-    # TODO: why is device on cpu even on the cluster??
     device = "cuda" if torch.cuda.is_available() else "cpu"
     tokenizer = GPT2TokenizerFast.from_pretrained(model_id)
     naive_model = GPT2LMHeadModel.from_pretrained(model_id).to(device)

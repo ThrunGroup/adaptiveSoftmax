@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from typing import Tuple, Any
 
 
-from constants import (
+from .constants import (
     DEBUG,
     DEV_BY,
     DEV_RATIO,

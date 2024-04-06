@@ -2,7 +2,7 @@ import os
 import numpy as np
 from typing import Tuple
 
-from utils import (
+from .utils import (
     approx_sigma,
     get_importance_errors,
     get_fs_errors,
@@ -10,7 +10,7 @@ from utils import (
     compare_true_arms,
 )
 
-from constants import (
+from .constants import (
     BATCH_SIZE,
     TOP_K,
     BETA,
