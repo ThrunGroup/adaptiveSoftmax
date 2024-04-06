@@ -4,7 +4,7 @@ KERNEL_SIZE = 3
 POOLING_SIZE = 2
 STRIDE = 2
 DROPOUT = 0.25
-TRAINING_ITERATIONS = 0
+TRAINING_ITERATIONS = 1
 BATCH_SIZE = 256
 NUM_EXPERIMENTS = 1
 OUT_CHANNEL = 32  # this choice is arbitrary... usually power of 2
@@ -15,6 +15,7 @@ MNIST = "mnist"
 MNIST_IN_CHANNEL = 1  # grayscale
 MNIST_IN_FEATURE = 5408
 MNIST_PATH = "./mnl/data/mnist"
+MNIST_OUT_CHANNEL = 32
 
 # eurosat
 EUROSAT = "eurosat"
@@ -22,6 +23,7 @@ EUROSAT_IN_CHANNEL = 3  # RGB
 EUROSAT_IN_FEATURE = 30752
 EUROSAT_PATH = "./mnl/data/eurosat"
 EUROSAT_DATAPOINTS = 27000
+EUROSAT_OUT_CHANNEL = 64
 
 # test constants
 MNL_TEST_BETA = 1.0

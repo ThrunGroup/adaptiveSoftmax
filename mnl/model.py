@@ -7,7 +7,7 @@ class BaseModel(torch.nn.Module):
         self, 
         in_channel, 
         in_feature,
-        out_channel=OUT_CHANNEL, 
+        out_channel, 
         kernel=KERNEL_SIZE
     ):
         super().__init__()

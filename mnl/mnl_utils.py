@@ -83,6 +83,7 @@ def get_A_and_x(dataset: str) -> Tuple[np.ndarray, Iterator]:
     # get dataset and params
     if dataset == MNIST:
         in_channel = MNIST_IN_CHANNEL
+        out_channel = MNIST_OUT_CHANNEL
         in_feature = MNIST_IN_FEATURE
         path = MNIST_PATH
         training_set = datasets.MNIST(root=path, train=True, transform=transforms.ToTensor(), download=True)
@@ -92,6 +93,7 @@ def get_A_and_x(dataset: str) -> Tuple[np.ndarray, Iterator]:
         ssl._create_default_https_context = ssl._create_unverified_context
         
         in_channel = EUROSAT_IN_CHANNEL
+        out_channel = EUROSAT_OUT_CHANNEL
         in_feature = EUROSAT_IN_FEATURE
         path = EUROSAT_PATH
         training_set = datasets.EuroSAT(root=path, transform=transforms.ToTensor(), download=True)
@@ -104,7 +106,7 @@ def get_A_and_x(dataset: str) -> Tuple[np.ndarray, Iterator]:
 
     # train the model
     dataloader = DataLoader(training_set, batch_size=BATCH_SIZE, shuffle=True)
-    model = BaseModel(in_channel, in_feature).to(device)
+    model = BaseModel(in_channel, out_channel, in_feature).to(device)
     train_base_model(dataloader, model, device)
 
     # extract A and x (NOTE: x is the testing datapoints)
@@ -117,7 +119,7 @@ def get_A_and_x(dataset: str) -> Tuple[np.ndarray, Iterator]:
 
     elif dataset == EUROSAT:
         xs = datasets.EuroSAT(root=path, transform=get_x, download=True)
-        xs = Subset(xs, x_indices[0])
+        xs = Subset(xs, x_indices)
 
     x_loader = DataLoader(xs, batch_size=1, shuffle=False)
     iterator = iter(x_loader)
