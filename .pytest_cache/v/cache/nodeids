@@ -1,0 +1,10 @@
+[
+  "tests/test_algorithm.py::test_delta",
+  "tests/test_algorithm.py::test_epsilon",
+  "tests/test_mnl.py::test_delta_mnl",
+  "tests/test_mnl.py::test_epsilon_mnl",
+  "tests/test_normalization.py::test_delta",
+  "tests/test_normalization.py::test_epsilon",
+  "tests/test_topk.py::test_delta",
+  "tests/test_topk.py::test_epsilon"
+]
