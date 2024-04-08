@@ -24,10 +24,11 @@ class BaseModel(torch.nn.Module):
         x = torch.flatten(x, start_dim=1)
         out = self.linear(x)
         return out
-
+    
     def transform_single(self, x):
         """
-        Runs forward pass of BaseModel EXCEPT the linear layer (equivalent to vector x in paper)
+        Passes the raw image through the forward pass UNTIL the linear layer.
+        The output is the "x" in the paper.
         :param x: raw data
         :return: transformed 1D vector
         """
@@ -37,11 +38,16 @@ class BaseModel(torch.nn.Module):
             x = self.pool(x)
             out = torch.flatten(x)
         return out
-
-    def get_prob(self, x):
-      with torch.no_grad():
-        x = self.forward(x)
-        return torch.nn.functional.softmax(x)
+      
+    def extract_features(dataloader, model, device):
+        model.eval()  # Ensure model is in evaluation mode
+        features = []
+        with torch.no_grad():
+            for data, _ in dataloader:
+                data = data.to(device)
+                feature = model.transform_single(data)  # Assuming this returns a batch of features
+                features.append(feature.detach().cpu())
+        return torch.cat(features).numpy()
 
     def get_linear_weight(self):
         return self.linear.weight.detach()
@@ -49,18 +55,5 @@ class BaseModel(torch.nn.Module):
     def set_linear_weight(self, weight):
         self.linear.weight = torch.nn.parameter.Parameter(weight)
 
-
-class TransformToLinear(object):
-    """
-    Defining transforms class to use torchvision transforms functionality
-    """
-    def __init__(self, model, device):
-        self.model = model
-        self.device = device
-    def __call__(self, image):
-        image = image.to(self.device)
-        image = self.model.transform_single(image)
-
-        return image
 
 

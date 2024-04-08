@@ -1,13 +1,14 @@
+import os
 import torch
 import numpy as np
 import ssl
 
-from typing import Tuple, Iterator
+from typing import Tuple
 
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, Subset
 
-from .model import BaseModel, TransformToLinear
+from .model import BaseModel
 from .mnl_constants import *
 
 def train_base_model(
@@ -71,7 +72,8 @@ def test_accuracy(
     accuracy = (100 * accuracy / n_batches)
     return accuracy
 
-def get_A_and_x(dataset: str) -> Tuple[np.ndarray, Iterator]:
+
+def generate_A_and_x(dataset: str) -> Tuple[np.ndarray, np.ndarray]:
     """
     Trains the basemodel on the dataset for which we will extract matrix A and vector x.
     You can set TRAINING_ITERATIONS = 0 if you want this to be completely random. 
@@ -104,29 +106,42 @@ def get_A_and_x(dataset: str) -> Tuple[np.ndarray, Iterator]:
         training_set = Subset(training_set, train_indices)
         x_indices = np.setdiff1d(np.arange(EUROSAT_DATAPOINTS), train_indices)
 
-    # train the model
+    # train the model and get test data (NOTE: x is from the test set)
     dataloader = DataLoader(training_set, batch_size=BATCH_SIZE, shuffle=True)
     model = BaseModel(in_channel, out_channel, in_feature).to(device)
     train_base_model(dataloader, model, device)
 
-    # extract A and x (NOTE: x is the testing datapoints)
-    get_x = transforms.Compose([
-        transforms.ToTensor(),
-        TransformToLinear(model, device)
-    ])
     if dataset == MNIST:
-        xs = datasets.MNIST(root=path, train=False, transform=get_x, download=True)
-
+        testset = datasets.MNIST(root=path, train=False, transform=transforms.ToTensor(), download=True)
     elif dataset == EUROSAT:
-        xs = datasets.EuroSAT(root=path, transform=get_x, download=True)
-        xs = Subset(xs, x_indices)
+        testset = datasets.EuroSAT(root=path, transform=transforms.ToTensor(), download=True)
+        testset = Subset(testset, x_indices)
+    test_loader = DataLoader(testset, batch_size=BATCH_SIZE, shuffle=False)
 
-    x_loader = DataLoader(xs, batch_size=1, shuffle=False)
-    iterator = iter(x_loader)
-
+    # extract A and x 
     A = model.get_linear_weight()
-    A = A.detach().cpu().numpy()
+    xs = model.extract_features(test_loader, model, device)
+    return A, xs
 
-    return (A, iterator)
 
+def load_A_and_xs(dataset: str) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Loads A matrix (weights) and x matrix (features) for a given dataset.
+    If doesn't exist, will generate.
     
+    :param dataset: expected values are 'MNIST' or 'EUROSAT'.
+    :returns: A and x
+    """
+    weights_path = f'./weights/{dataset.lower()}.npy'
+    x_matrix_path = f'./x_matrix/{dataset.lower()}.npy'
+    
+    # Check if the files exist
+    if os.path.exists(weights_path) and os.path.exists(x_matrix_path):
+        A = np.load(weights_path)
+        x_matrix = np.load(x_matrix_path)
+    else:
+        A, x_matrix = generate_A_and_x(dataset)
+        np.save(weights_path, A)
+        np.save(x_matrix_path, x_matrix)
+    
+    return A, x_matrix

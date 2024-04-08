@@ -1,19 +1,16 @@
 import numpy as np
 import torch
 
-from mnl.mnl_utils import get_A_and_x
+from mnl.mnl_utils import load_A_and_xs
 from mnl.mnl_constants import *
 from .test_utils import single_run_adasoftmax
 
 
 def epsilon_check(dataset):
-    A, iterator = get_A_and_x(dataset)
-    x, label = next(iterator)
-    x = x[0].detach().cpu().numpy()
-
+    A, xs = load_A_and_xs(dataset)
     in_bounds, error, budget = single_run_adasoftmax(
         A=A,
-        x=x,
+        x=xs[0],
         k=MNL_TEST_TOPK,
         beta=MNL_TEST_BETA,
         delta=MNL_TEST_DELTA,
@@ -24,18 +21,14 @@ def epsilon_check(dataset):
     return in_bounds, budget, n * d
 
 def delta_check(dataset):
-    A, iterator = get_A_and_x(dataset)
-    x, label = next(iterator)
-    x = x[0].detach().cpu().numpy()
+    A, xs = load_A_and_xs(dataset)
     n, d = A.shape
 
     total_wrong = 0
     total_budget = 0
 
-    for seed in range(NUM_EXPERIMENTS):
+    for seed, x in enumerate(min(xs.shape[0], NUM_EXPERIMENTS)):
         np.random.seed(seed)
-        x, label = next(iterator)
-        x = x[0].detach().cpu().numpy()
 
         # adasoftmax
         in_bounds, error, budget = single_run_adasoftmax(
@@ -73,5 +66,4 @@ def test_delta_mnl_eurosat():
 
 
 if __name__ == "__main__":
-    test_eps_mnl_eurosat()
-    test_delta_mnl_eurosat()
+    test_eps_mnl_mnist()
