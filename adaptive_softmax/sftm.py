@@ -5,6 +5,10 @@ from scipy.special import logsumexp, softmax
 
 # TODO convert iter to total its across alg
 # TODO integrate arm puller into SFTM
+# TODO add documentation
+# TODO pull in Ryan's code
+# TODO change all references to adasoftmax
+# TODO add tests
 
 class SFTM:
   def __init__(self,

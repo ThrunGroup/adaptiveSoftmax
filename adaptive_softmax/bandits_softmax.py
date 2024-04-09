@@ -4,9 +4,10 @@ from hadamard_transform import randomized_hadamard_transform
 
 # TODO tensor-ify
 # TODO estimate sigma^2
+# TODO add documentation
 
 def generate_weighted_permutation(weights: np.ndarray, gen=np.random.default_rng(0)):
-  assert np.all(weights > 0)
+  assert np.all(weights >= 0)
   with np.errstate(divide='ignore'):
     logits = np.log(weights) - np.log(np.sum(weights))
     perturbed_logits = logits + gen.gumbel(size=len(logits))
@@ -113,20 +114,20 @@ class BanditsSoftmax:
     
     prev_it = self._it[arms][0]
     next_it = min(it, self.d)
-    
-    # no importance sampling
-    if not (self.atom_importance_sampling or self.query_importance_sampling):
-      self._estimates[arms] *= prev_it
-      self._estimates[arms] += (self._Ap[arms, prev_it:next_it] @ self._xp[prev_it:next_it]) * self.d
-      self._estimates[arms] /= next_it
 
     # importance sampling
-    else:
+    if self.atom_importance_sampling or self.query_importance_sampling:
       threshold = -np.inf if next_it == self.d else self._perturbed_logits[self._permutation[next_it]]
       weights = 1 - np.exp(-np.exp(self._logits[self._permutation[:next_it]] - threshold))
       A = self._A[arms, self._permutation[:next_it]] if self._Ap is None else self._Ap[arms, :next_it]
       x = self._xp[:next_it] / weights
-      self._estimates[arms] = (A @ x) * (self.d / next_it)
+      self._estimates[arms] = (A @ x) / next_it
+
+    # no importance sampling (equal weighting)
+    else:
+      self._estimates[arms] *= prev_it
+      self._estimates[arms] += (self._Ap[arms, prev_it:next_it] @ self._xp[prev_it:next_it]) * self.d
+      self._estimates[arms] /= next_it
 
     self._it[arms] = next_it
     return self._estimates[arms]
