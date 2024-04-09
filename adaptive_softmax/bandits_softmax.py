@@ -99,7 +99,7 @@ class BanditsSoftmax:
     assert self._x is not None
     assert len(arms) == len(its)
 
-    for i in range(len(arms)):
+    for i in np.nonzero(its > self._it[arms])[0]:
       self.batch_pull(np.array(arms[i]), its[i])
     
     return self._estimates[arms]

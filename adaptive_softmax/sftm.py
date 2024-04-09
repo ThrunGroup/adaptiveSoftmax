@@ -3,6 +3,9 @@ from typing import Tuple
 from math import log, ceil, sqrt
 from scipy.special import logsumexp, softmax
 
+# TODO convert iter to total its across alg
+# TODO integrate arm puller into SFTM
+
 class SFTM:
   def __init__(self,
                A: np.ndarray,
@@ -33,23 +36,24 @@ class SFTM:
     dlt = self.failure_probability
     sig2 = self.noise_bound
 
-    # i_star_hat = self.best_arm(x, dlt/3)
+    # i_star_hat = self.best_arm(x, dlt/3, bta, sig2)
     # mu_star_hat = self.estimate_arm_logit(x, i_star_hat, bta, eps/4, dlt/3, sig2)
     # log_S_hat = self.log_norm_estimation(x, bta, eps/4, dlt/3, sig2)
 
-    i_star_hat = self.best_arm(x, dlt/2)
+    i_star_hat = self.best_arm(x, dlt/2, bta, sig2)
     mu_star_hat = self.A[i_star_hat] @ x # NOTE true value for best arm only
     log_S_hat = self.log_norm_estimation(x, bta, eps, dlt/2, sig2)
 
     return i_star_hat, np.exp(bta * mu_star_hat - log_S_hat)
   
   # Algorithm 3 (https://proceedings.neurips.cc/paper_files/paper/2013/file/598b3e71ec378bd83e0a727608b5db01-Paper.pdf)
-  def best_arm(self, x: np.ndarray, dlt: float) -> int:
+  def best_arm(self, x: np.ndarray, dlt: float, bta: float, sig2: float) -> int:
     # initialize params (line 1)
     n = self.n
     r = 0
     S_r = np.arange(n)
-    t_r = 0
+    t_rp = 0
+    t_r = min(self.d, 17 * (bta ** 2) * sig2 * log(6 * n / dlt))
     eps_r = 1
     p = np.zeros(n)
     it = 0
@@ -57,9 +61,10 @@ class SFTM:
       # update parameters (lines 3-4)
       r += 1
       eps_r /= 2
-      t_rp = t_r
-      t_r = (2 / (eps_r ** 2)) * log(4 * n * (r ** 2) / dlt)
+      # t_r = (2 / (eps_r ** 2)) * log(4 * n * (r ** 2) / dlt)
       it_r = min(self.d, t_r - t_rp)
+      t_rp = t_r
+      t_r *= 2
 
       # pull arms and update estimates (lines 5-9)
       mu_est_r = self.pull_arms(S_r, x, it=it_r)
