@@ -7,7 +7,7 @@ from constants import (
   TEST_SEED,
 )
 
-from test_utils import construct_high_variance_example
+from tests.test_utils import construct_high_variance_example
 
 
 def test_randomized_hadamard_transform():
@@ -27,4 +27,4 @@ def test_randomized_hadamard_transform():
   
   assert bandits.d == dpad, 'dimension should be padded to the nearest power of 2'
   assert np.max(np.var(bandits._A, axis=1)) < prev_var, 'max variance should decrease after randomized Hadamard transform'
-  assert np.allclose(bandits.pull_arm(13, bandits.d), A[13] @ x), 'pulling all arms should return the correct value'
+  assert np.allclose(bandits.pull_arm(0, bandits.d), A[0] @ x), 'pulling all arms should return the correct value'
