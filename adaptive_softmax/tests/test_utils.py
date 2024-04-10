@@ -12,6 +12,7 @@ from constants import (
     TEST_SAMPLES_FOR_SIGMA,
     TEST_MU_LOWER,
     TEST_MU_UPPER,
+    TEST_SEED,
 )
 
 
@@ -43,17 +44,38 @@ def construct_random_example(
 
     :returns: A, x
     """
+    gen = np.random.default_rng(TEST_SEED)
+
     # TODO: better way to construct this??
     if mu is None:
-        mu = np.random.uniform(TEST_MU_LOWER, TEST_MU_UPPER, size=(n,))
+        mu = gen.uniform(TEST_MU_LOWER, TEST_MU_UPPER, size=(n,))
 
-    x = np.random.uniform(low=0.94, high=1, size=d)  
-    Z = np.random.normal(loc=0, scale=1 / d, size=(n, d))
+    x = gen.uniform(low=0.94, high=1, size=d)  
+    Z = gen.normal(loc=0, scale=1 / d, size=(n, d))
     A = np.outer(mu, x) / np.sum(x**2) + Z
     A = A - np.outer(A @ x - mu, np.ones(d) / np.sum(x))
 
     return A, x
 
+def construct_high_variance_example(
+        n: int,
+        d: int,
+        n_peaks: int = 2,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Random gaussian A with high variance added to some columns and an all ones x.
+    :param n: number of atoms
+    :param d: dimension of query
+    :param n_peaks: number of high variance columns 
+    :returns: A, x
+    """
+    gen = np.random.default_rng(TEST_SEED)
+    
+    x = np.ones(d)
+    A = gen.normal(size=(n, d))
+    A[:, :n_peaks] = 100 * gen.choice([-1, 1], size=(n, n_peaks))
+
+    return A, x
 
 def single_run_normalization(
     A: np.ndarray,

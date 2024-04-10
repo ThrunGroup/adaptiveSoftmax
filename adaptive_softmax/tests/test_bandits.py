@@ -1,17 +1,20 @@
 import numpy as np
 from bandits_softmax import BanditsSoftmax
 
-def test_randomized_hadamard_transform():
-  seed = 42
-  n = 100
-  d = 240
+from constants import (
+  NUM_ROWS,
+  NUM_COLS,
+  TEST_SEED,
+)
 
-  gen = np.random.default_rng(seed)
-  dpad = 2 ** int(np.ceil(np.log2(d)))
-  A = gen.normal(size=(n, d))
-  A[:, ::60] = 100 * gen.choice([-1, 1], size=(n, d // 60))
-  x = np.ones(d)
+from test_utils import construct_high_variance_example
+
+
+def test_randomized_hadamard_transform():
+  A, x = construct_high_variance_example(NUM_ROWS, NUM_COLS)
+
   prev_var = np.max(np.var(A, axis=1))
+  dpad = 2**int(np.ceil(np.log2(NUM_COLS)))
 
   bandits = BanditsSoftmax(
     A,
@@ -19,7 +22,7 @@ def test_randomized_hadamard_transform():
     atom_importance_sampling=False,
     query_importance_sampling=False,
     verbose=True,
-    seed=seed)
+    seed=TEST_SEED)
   bandits.set_query(x)
   
   assert bandits.d == dpad, 'dimension should be padded to the nearest power of 2'
