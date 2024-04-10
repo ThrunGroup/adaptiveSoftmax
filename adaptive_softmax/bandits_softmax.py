@@ -122,9 +122,10 @@ class BanditsSoftmax:
     if self.atom_importance_sampling or self.query_importance_sampling:
       threshold = -np.inf if next_it == self.d else self._perturbed_logits[self._permutation[next_it]]
       weights = 1 - np.exp(-np.exp(self._logits[self._permutation[:next_it]] - threshold))
-      A = self._A[arms, self._permutation[:next_it]] if self._Ap is None else self._Ap[arms, :next_it]
+      #  import pdb; pdb.set_trace()
+      A = (self._A[np.ix_(arms, self._permutation[:next_it])] if self._Ap is None else self._Ap[arms, :next_it]).reshape((self.n, next_it))
       x = self._xp[:next_it] / weights
-      self._estimates[arms] = (A @ x) / next_it
+      self._estimates[arms] = (A @ x)
 
     # no importance sampling (equal weighting)
     else:

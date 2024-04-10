@@ -63,17 +63,19 @@ def construct_high_variance_example(
         n_peaks: int = 2,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Random gaussian A with high variance added to some columns and an all ones x.
+    Random gaussian A with high variance added to some columns and a mostly all ones x
+    with higher magnitude at the same columns.
     :param n: number of atoms
     :param d: dimension of query
     :param n_peaks: number of high variance columns 
     :returns: A, x
     """
     gen = np.random.default_rng(TEST_SEED)
-    
+
     x = np.ones(d)
     A = gen.normal(size=(n, d))
-    A[:, :n_peaks] = 100 * gen.choice([-1, 1], size=(n, n_peaks))
+    A[:, :n_peaks] = 10 * gen.choice([-1, 1], size=(n, n_peaks))
+    x[:n_peaks] = 10
 
     return A, x
 
