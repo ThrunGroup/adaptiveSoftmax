@@ -4,12 +4,12 @@ from bandits_softmax import BanditsSoftmax
 def test_randomized_hadamard_transform():
   seed = 42
   n = 100
-  d = 256
+  d = 240
 
   gen = np.random.default_rng(seed)
   dpad = 2 ** int(np.ceil(np.log2(d)))
   A = gen.normal(size=(n, d))
-  A[:, ::64] = 100 * gen.choice([-1, 1], size=(n, d // 64))
+  A[:, ::60] = 100 * gen.choice([-1, 1], size=(n, d // 60))
   x = np.ones(d)
   prev_var = np.max(np.var(A, axis=1))
 
