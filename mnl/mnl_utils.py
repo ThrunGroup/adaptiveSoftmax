@@ -122,7 +122,11 @@ def generate_A_and_x(dataset: str) -> Tuple[np.ndarray, np.ndarray]:
     return A, xs
 
 
-def load_A_and_xs(dataset: str, testing: bool = True) -> Tuple[np.ndarray, np.ndarray]:
+def load_A_and_xs(
+        dataset: str, 
+        testing: bool = True,
+        train_iterations: int = TRAINING_ITERATIONS,
+    ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Loads A matrix (weights) and x matrix (features) for a given dataset.
     If doesn't exist, will generate.
@@ -133,8 +137,9 @@ def load_A_and_xs(dataset: str, testing: bool = True) -> Tuple[np.ndarray, np.nd
     # Ensure the directories exist
     os.makedirs(MNL_WEIGHTS_DIR, exist_ok=True)
     os.makedirs(MNL_XS_DIR, exist_ok=True)
+    path = f'{dataset.lower()}_{train_iterations}.npy'
     if testing: 
-        path = f'testing_{dataset.lower()}.npy'
+        path = f'testing_{path}'
 
     weights_path = f'{MNL_WEIGHTS_DIR}/{path}'
     x_matrix_path = f'{MNL_XS_DIR}/{path}'
