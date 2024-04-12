@@ -3,25 +3,28 @@ import torch
 from .mnl_constants import *
 
 class BaseModel(torch.nn.Module):
-    def __init__(
-        self, 
-        in_channel, 
-        in_feature,
-        out_channel, 
-        kernel=KERNEL_SIZE
-    ):
-        super().__init__()
-        self.conv = torch.nn.Conv2d(in_channel, out_channel, kernel)
-        self.pool = torch.nn.MaxPool2d(kernel_size=POOLING_SIZE, stride=STRIDE)
-        self.linear = torch.nn.Linear(in_feature, NUM_CLASSES, bias=False, dtype=torch.float)
+    def __init__(self, in_channel, out_channel):
+        super(BaseModel, self).__init__()
+        self.conv = torch.nn.Conv2d(
+            in_channels=in_channel, 
+            out_channels=out_channel, 
+            kernel_size=CONST_KERNEL_SIZE, 
+            padding=CONST_PADDING,
+            stride=CONST_STRIDE,
+        )
+        # this halves the dimension
+        self.pool = torch.nn.MaxPool2d(
+            kernel_size=POOLING, 
+            stride=CONST_STRIDE * 2,
+        )
         self.dropout = torch.nn.Dropout(DROPOUT)
-
+        self.linear = None  
+        
     def forward(self, x):
-        x = self.conv(x)
-        x = torch.nn.functional.relu(x)
-        x = self.pool(x)
-        x = self.dropout(x)
-        x = torch.flatten(x, start_dim=1)
+        x = self.transform_single(x)
+        if self.linear is None:
+            self.linear = torch.nn.Linear(x.shape[1], NUM_CLASSES, bias=False, dtype=torch.float)
+        
         out = self.linear(x)
         return out
     
@@ -36,16 +39,16 @@ class BaseModel(torch.nn.Module):
             x = self.conv(x)
             x = torch.nn.functional.relu(x)
             x = self.pool(x)
-            out = torch.flatten(x)
+            out = torch.flatten(x, start_dim=1)
         return out
       
-    def extract_features(dataloader, model, device):
-        model.eval()  # Ensure model is in evaluation mode
+    def extract_features(self, dataloader, device):
+        self.eval() 
         features = []
         with torch.no_grad():
             for data, _ in dataloader:
                 data = data.to(device)
-                feature = model.transform_single(data)  # Assuming this returns a batch of features
+                feature = self.transform_single(data)  
                 features.append(feature.detach().cpu())
         return torch.cat(features).numpy()
 

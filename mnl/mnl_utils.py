@@ -86,7 +86,6 @@ def generate_A_and_x(dataset: str) -> Tuple[np.ndarray, np.ndarray]:
     if dataset == MNIST:
         in_channel = MNIST_IN_CHANNEL
         out_channel = MNIST_OUT_CHANNEL
-        in_feature = MNIST_IN_FEATURE
         path = MNIST_PATH
         training_set = datasets.MNIST(root=path, train=True, transform=transforms.ToTensor(), download=True)
 
@@ -96,7 +95,6 @@ def generate_A_and_x(dataset: str) -> Tuple[np.ndarray, np.ndarray]:
         
         in_channel = EUROSAT_IN_CHANNEL
         out_channel = EUROSAT_OUT_CHANNEL
-        in_feature = EUROSAT_IN_FEATURE
         path = EUROSAT_PATH
         training_set = datasets.EuroSAT(root=path, transform=transforms.ToTensor(), download=True)
 
@@ -108,7 +106,7 @@ def generate_A_and_x(dataset: str) -> Tuple[np.ndarray, np.ndarray]:
 
     # train the model and get test data (NOTE: x is from the test set)
     dataloader = DataLoader(training_set, batch_size=BATCH_SIZE, shuffle=True)
-    model = BaseModel(in_channel, out_channel, in_feature).to(device)
+    model = BaseModel(in_channel, out_channel).to(device)
     train_base_model(dataloader, model, device)
 
     if dataset == MNIST:
@@ -119,12 +117,12 @@ def generate_A_and_x(dataset: str) -> Tuple[np.ndarray, np.ndarray]:
     test_loader = DataLoader(testset, batch_size=BATCH_SIZE, shuffle=False)
 
     # extract A and x 
-    A = model.get_linear_weight()
-    xs = model.extract_features(test_loader, model, device)
+    A = model.get_linear_weight().cpu().numpy()
+    xs = model.extract_features(test_loader, device)
     return A, xs
 
 
-def load_A_and_xs(dataset: str) -> Tuple[np.ndarray, np.ndarray]:
+def load_A_and_xs(dataset: str, testing: bool = True) -> Tuple[np.ndarray, np.ndarray]:
     """
     Loads A matrix (weights) and x matrix (features) for a given dataset.
     If doesn't exist, will generate.
@@ -132,9 +130,15 @@ def load_A_and_xs(dataset: str) -> Tuple[np.ndarray, np.ndarray]:
     :param dataset: expected values are 'MNIST' or 'EUROSAT'.
     :returns: A and x
     """
-    weights_path = f'./weights/{dataset.lower()}.npy'
-    x_matrix_path = f'./x_matrix/{dataset.lower()}.npy'
-    
+    # Ensure the directories exist
+    os.makedirs(MNL_WEIGHTS_DIR, exist_ok=True)
+    os.makedirs(MNL_XS_DIR, exist_ok=True)
+    if testing: 
+        path = f'testing_{dataset.lower()}.npy'
+
+    weights_path = f'{MNL_WEIGHTS_DIR}/{path}'
+    x_matrix_path = f'{MNL_XS_DIR}/{path}'
+
     # Check if the files exist
     if os.path.exists(weights_path) and os.path.exists(x_matrix_path):
         A = np.load(weights_path)

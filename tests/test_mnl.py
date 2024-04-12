@@ -8,6 +8,7 @@ from .test_utils import single_run_adasoftmax
 
 def epsilon_check(dataset):
     A, xs = load_A_and_xs(dataset)
+    import ipdb; ipdb.set_trace()   
     in_bounds, error, budget = single_run_adasoftmax(
         A=A,
         x=xs[0],
@@ -17,6 +18,7 @@ def epsilon_check(dataset):
         epsilon=MNL_TEST_EPSILON,
         importance=MNL_TEST_IMPORTANCE,
     )
+    import ipdb; ipdb.set_trace()
     n, d = A.shape
     return in_bounds, budget, n * d
 
@@ -27,13 +29,13 @@ def delta_check(dataset):
     total_wrong = 0
     total_budget = 0
 
-    for seed, x in enumerate(min(xs.shape[0], NUM_EXPERIMENTS)):
-        np.random.seed(seed)
+    for i in range(min(xs.shape[0], NUM_EXPERIMENTS)):
+        np.random.seed(i)
 
         # adasoftmax
         in_bounds, error, budget = single_run_adasoftmax(
             A=A,
-            x=x,
+            x=xs[i],
             k=MNL_TEST_TOPK,
             beta=MNL_TEST_BETA,
             delta=MNL_TEST_DELTA,
@@ -66,4 +68,4 @@ def test_delta_mnl_eurosat():
 
 
 if __name__ == "__main__":
-    test_eps_mnl_mnist()
+    test_delta_mnl_mnist()
