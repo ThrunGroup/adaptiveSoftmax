@@ -37,7 +37,6 @@ class BanditsSoftmax:
     self._A = A
     self._x = None
     self._gen = np.random.default_rng(seed)
-    
 
     if randomized_hadamard_transform:
       dp = 2 ** int(np.ceil(np.log2(self.d)))
@@ -70,9 +69,16 @@ class BanditsSoftmax:
   @property
   def it(self):
     return self._it
+  
+  @property
+  def max_pulls(self):
+    return self.d
 
   def set_query(self, x: np.ndarray):
     assert x.size <= self.d if self.randomized_hadamard_transform else x.size == self.d
+
+    self._it = np.zeros(self.n, dtype=int)
+    self._estimates = np.zeros(self.n, dtype=np.float64)
 
     self._x = np.pad(x, (0, self.d - x.size), 'constant', constant_values=0)
 
@@ -93,6 +99,16 @@ class BanditsSoftmax:
         print(f'Query weights:\n{query_weights}')
         print(f'Combined weights:\n{self._atom_weights * query_weights}')
         print(f'Permutation:\n{self._permutation}')
+  
+  def exact_values(self, arms: np.ndarray) -> np.ndarray:
+    assert self._x is not None
+
+    if np.any(self.it[arms] < self.d):
+      A_arms = self._A[arms, self._permutation] if self._Ap is None else self._Ap[arms]
+      self._estimates[arms] = A_arms @ self._xp
+      self._it[arms] = self.d
+    
+    return self._estimates[arms]
   
   def pull_arm(self, arm: int, it: int) -> float:
     assert self._x is not None
