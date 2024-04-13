@@ -81,6 +81,8 @@ def generate_A_and_x(dataset: str) -> Tuple[np.ndarray, np.ndarray]:
     :returns: (matrix A, iterator for x)
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    np.random.seed(MNL_TEST_SEED)
+    torch.manual_seed(MNL_TEST_SEED)
 
     # get dataset and params
     if dataset == MNIST:
@@ -118,7 +120,7 @@ def generate_A_and_x(dataset: str) -> Tuple[np.ndarray, np.ndarray]:
 
     # extract A and x 
     A = model.get_linear_weight().cpu().numpy()
-    xs = model.extract_features(test_loader, device)
+    xs = model.extract_features(test_loader)
     return A, xs
 
 
@@ -126,6 +128,7 @@ def load_A_and_xs(
         dataset: str, 
         testing: bool = True,
         train_iterations: int = TRAINING_ITERATIONS,
+        device: str = 'cpu',
     ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Loads A matrix (weights) and x matrix (features) for a given dataset.
@@ -137,7 +140,12 @@ def load_A_and_xs(
     # Ensure the directories exist
     os.makedirs(MNL_WEIGHTS_DIR, exist_ok=True)
     os.makedirs(MNL_XS_DIR, exist_ok=True)
-    path = f'{dataset.lower()}_{train_iterations}.npy'
+    if dataset == MNIST:
+        out_channel = MNIST_OUT_CHANNEL
+    else:
+        out_channel = EUROSAT_OUT_CHANNEL
+
+    path = f'{dataset}_out{out_channel}_iter{train_iterations}'
     if testing: 
         path = f'testing_{path}'
 

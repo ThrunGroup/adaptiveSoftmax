@@ -23,7 +23,12 @@ class BaseModel(torch.nn.Module):
     def forward(self, x):
         x = self.transform_single(x)
         if self.linear is None:
-            self.linear = torch.nn.Linear(x.shape[1], NUM_CLASSES, bias=False, dtype=torch.float)
+            self.linear = torch.nn.Linear(
+                x.shape[1], 
+                NUM_CLASSES, 
+                bias=False, 
+                dtype=torch.float
+            ).to(x.device)
         
         out = self.linear(x)
         return out
@@ -42,12 +47,11 @@ class BaseModel(torch.nn.Module):
             out = torch.flatten(x, start_dim=1)
         return out
       
-    def extract_features(self, dataloader, device):
+    def extract_features(self, dataloader):
         self.eval() 
         features = []
         with torch.no_grad():
             for data, _ in dataloader:
-                data = data.to(device)
                 feature = self.transform_single(data)  
                 features.append(feature.detach().cpu())
         return torch.cat(features).numpy()

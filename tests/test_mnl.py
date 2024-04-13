@@ -6,9 +6,11 @@ from mnl.mnl_constants import *
 from .test_utils import single_run_adasoftmax
 
 
+
 def epsilon_check(dataset):
-    A, xs = load_A_and_xs(dataset)
-    import ipdb; ipdb.set_trace()   
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    A, xs = load_A_and_xs(dataset, device)
+    import ipdb; ipdb.set_trace()
     in_bounds, error, budget = single_run_adasoftmax(
         A=A,
         x=xs[0],
@@ -18,12 +20,12 @@ def epsilon_check(dataset):
         epsilon=MNL_TEST_EPSILON,
         importance=MNL_TEST_IMPORTANCE,
     )
-    import ipdb; ipdb.set_trace()
     n, d = A.shape
     return in_bounds, budget, n * d
 
 def delta_check(dataset):
-    A, xs = load_A_and_xs(dataset)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    A, xs = load_A_and_xs(dataset, device)
     n, d = A.shape
 
     total_wrong = 0

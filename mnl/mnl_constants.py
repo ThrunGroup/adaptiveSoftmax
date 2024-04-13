@@ -12,7 +12,7 @@ BATCH_SIZE = 256
 # mnist 
 MNIST = "mnist"
 MNIST_IN_CHANNEL = 1  # grayscale
-MNIST_OUT_CHANNEL = 16
+MNIST_OUT_CHANNEL = 32
 MNIST_PATH = "mnl/data/mnist"
 
 # eurosat
@@ -36,6 +36,8 @@ MNL_TEST_TOPK = 1
 MNL_TEST_SAMPLES_FOR_SIGMA = None   # this uses all d
 MNL_TEST_IMPORTANCE = False
 MNL_TEST_BUDGET_IMPROVEMENT = 1.0
+MNL_TEST_SEED = 0
 
 # mnist tests
-MNL_TEST_MNIST_LINEAR = 3136 # this is when dimensions get halved
+MNL_TEST_MNIST_LINEAR = 3136 # out_channel = 16
+
