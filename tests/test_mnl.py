@@ -8,8 +8,7 @@ from .test_utils import single_run_adasoftmax
 
 
 def epsilon_check(dataset):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    A, xs = load_A_and_xs(dataset, device)
+    A, xs = load_A_and_xs(dataset)
     import ipdb; ipdb.set_trace()
     in_bounds, error, budget = single_run_adasoftmax(
         A=A,
@@ -24,8 +23,7 @@ def epsilon_check(dataset):
     return in_bounds, budget, n * d
 
 def delta_check(dataset):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    A, xs = load_A_and_xs(dataset, device)
+    A, xs = load_A_and_xs(dataset)
     n, d = A.shape
 
     total_wrong = 0

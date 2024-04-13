@@ -47,11 +47,12 @@ class BaseModel(torch.nn.Module):
             out = torch.flatten(x, start_dim=1)
         return out
       
-    def extract_features(self, dataloader):
+    def extract_features(self, dataloader, device):
         self.eval() 
         features = []
         with torch.no_grad():
             for data, _ in dataloader:
+                data = data.to(device)
                 feature = self.transform_single(data)  
                 features.append(feature.detach().cpu())
         return torch.cat(features).numpy()

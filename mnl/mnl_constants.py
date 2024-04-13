@@ -6,7 +6,7 @@ POOLING = 2    # halves the dimension
 DROPOUT = 0.25
 
 NUM_CLASSES = 10
-TRAINING_ITERATIONS = 1
+TRAINING_ITERATIONS = 10
 BATCH_SIZE = 256
 
 # mnist 

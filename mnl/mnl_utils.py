@@ -120,7 +120,7 @@ def generate_A_and_x(dataset: str) -> Tuple[np.ndarray, np.ndarray]:
 
     # extract A and x 
     A = model.get_linear_weight().cpu().numpy()
-    xs = model.extract_features(test_loader)
+    xs = model.extract_features(test_loader, device)
     return A, xs
 
 
@@ -128,7 +128,6 @@ def load_A_and_xs(
         dataset: str, 
         testing: bool = True,
         train_iterations: int = TRAINING_ITERATIONS,
-        device: str = 'cpu',
     ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Loads A matrix (weights) and x matrix (features) for a given dataset.

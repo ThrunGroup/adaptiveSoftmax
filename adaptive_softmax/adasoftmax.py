@@ -54,6 +54,7 @@ def estimate_mu_hat(
     """
     n, d = atoms.shape
     log_term = np.log((6 * n) / delta)
+    import ipdb; ipdb.set_trace()
 
     # Phase 1: Uniform Sampling to get importance for adaptive sampling
     uni_budget = int(np.ceil(UNI_CONST * 17 * beta**2 * sigma**2 * log_term))
@@ -263,6 +264,7 @@ def ada_softmax(
         with open(log_file_path, "a") as f:
             f.write("\n########### starting new experiment ###########\n")
 
+    import ipdb; ipdb.set_trace()
     n, d = A.shape
     sigma, dist = approx_sigma(A, x, samples_for_sigma, importance)
 
