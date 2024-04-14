@@ -19,6 +19,7 @@ class BanditsSoftmax:
   def __init__(
       self,
       A: np.ndarray,
+      temperature: float = 1.0,
       atom_importance_sampling=True,
       query_importance_sampling=True,
       randomized_hadamard_transform=True,
@@ -29,6 +30,7 @@ class BanditsSoftmax:
 
     self.n = A.shape[0]
     self.d = A.shape[1]
+    self.temperature = temperature
     self.atom_importance_sampling = atom_importance_sampling
     self.query_importance_sampling = query_importance_sampling
     self.randomized_hadamard_transform = randomized_hadamard_transform
@@ -46,6 +48,8 @@ class BanditsSoftmax:
       self._A = ht(torch.tensor(self._A * self._rademacher)).numpy()
 
     self._atom_weights = np.sum(np.abs(self._A), axis=0) if atom_importance_sampling else np.ones(self.d)
+    self._max_abs_atom_value = np.max(np.abs(self._A))
+    self._max_abs_query_value = None
     self._permutation, self._logits, self._perturbed_logits = generate_weighted_permutation(self._atom_weights, gen=self._gen)
 
     self._Ap = None if self.query_importance_sampling else self._A[:, self._permutation].copy()
@@ -74,6 +78,12 @@ class BanditsSoftmax:
   def max_pulls(self):
     return self.d
 
+  @property
+  def bandit_range(self):
+    assert self._x is not None
+
+    return 2 * self._max_abs_atom_value * self._max_abs_query_value * np.sqrt(self.d)
+
   def set_query(self, x: np.ndarray):
     assert x.size <= self.d if self.randomized_hadamard_transform else x.size == self.d
 
@@ -89,6 +99,7 @@ class BanditsSoftmax:
       query_weights = np.abs(self._x)
       self._permutation, self._logits, self._perturbed_logits = generate_weighted_permutation(self._atom_weights * query_weights, gen=self._gen)
     
+    self._max_abs_query_value = np.max(np.abs(self._x))
     self._xp = self._x[self._permutation].copy()
 
     if self.verbose:
@@ -105,7 +116,7 @@ class BanditsSoftmax:
 
     if np.any(self.it[arms] < self.d):
       A_arms = self._A[arms, self._permutation] if self._Ap is None else self._Ap[arms]
-      self._estimates[arms] = A_arms @ self._xp
+      self._estimates[arms] = (A_arms @ self._xp) * self.temperature
       self._it[arms] = self.d
     
     return self._estimates[arms]
@@ -136,16 +147,17 @@ class BanditsSoftmax:
 
     # importance sampling
     if self.atom_importance_sampling or self.query_importance_sampling:
-      threshold = -np.inf if next_it == self.d else self._perturbed_logits[self._permutation[next_it]]
-      weights = 1 - np.exp(-np.exp(self._logits[self._permutation[:next_it]] - threshold))
-      A = (self._A[np.ix_(arms, self._permutation[:next_it])] if self._Ap is None else self._Ap[arms, :next_it]).reshape((self.n, next_it))
+      weights = 1 if next_it == self.d \
+         else 1 - np.exp(-np.exp(self._logits[self._permutation[:next_it]] - self._perturbed_logits[self._permutation[next_it]]))
+
+      A = (self._A[np.ix_(arms, self._permutation[:next_it])] if self._Ap is None else self._Ap[arms, :next_it]).reshape((len(arms), next_it))
       x = self._xp[:next_it] / weights
-      self._estimates[arms] = (A @ x)
+      self._estimates[arms] = (A @ x) * self.temperature
 
     # no importance sampling (equal weighting)
     else:
       self._estimates[arms] *= prev_it
-      self._estimates[arms] += (self._Ap[arms, prev_it:next_it] @ self._xp[prev_it:next_it]) * self.d
+      self._estimates[arms] += (self._Ap[arms, prev_it:next_it] @ self._xp[prev_it:next_it]) * (self.d * self.temperature)
       self._estimates[arms] /= next_it
 
     self._it[arms] = next_it

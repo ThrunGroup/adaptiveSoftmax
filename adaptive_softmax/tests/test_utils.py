@@ -1,11 +1,7 @@
 import numpy as np
 from typing import Tuple
+from adaptive_softmax.sftm import SFTM
 
-from adasoftmax import (
-    ada_softmax,
-    estimate_mu_hat,
-    find_topk_arms,
-)
 from constants import (
     EPSILON_SCALE,
     DELTA_SCALE,
@@ -97,17 +93,17 @@ def single_run_normalization(
     uniform = np.ones(len(x)) / len(x)
     true_s = np.sum(np.exp(beta * true_mu))
 
-    mu, budget = estimate_mu_hat(
-        atoms=A,
-        query=x,
-        epsilon=epsilon / EPSILON_SCALE,
-        delta=delta / DELTA_SCALE,
-        sigma=sigma,
-        beta=beta,
-        dist=uniform,
+    sftm = SFTM(
+        A,
+        noise_bound=sigma ** 2,
+        failure_probability=delta / DELTA_SCALE,
+        multiplicative_error=epsilon / EPSILON_SCALE,
+        temperature=beta,
     )
 
-    s_hat = np.sum(np.exp(beta * mu))
+    _, _, s_hat = sftm.adaptive_softmax(x)
+    budget = sftm.bandits.it
+
     error = np.abs(s_hat - true_s) / true_s
     in_bounds = (error <= epsilon / EPSILON_SCALE)  
     total_budget = np.sum(budget).item()
@@ -139,16 +135,14 @@ def single_run_topk(
     if starting_budget is None:
         starting_budget = np.ones(A.shape[0]).astype(np.int64)  # zero arms pulled
 
-    topk_hat, _, budgets = find_topk_arms(
-        atoms=A,
-        query=x,
-        sigma=sigma,
-        delta=delta / DELTA_SCALE,
-        mu_hat=starting_mu,
-        d_used=starting_budget,
-        k=k,
-        dist=uniform,
+    sftm = SFTM(
+        A,
+        noise_bound=sigma ** 2,
+        failure_probability=delta / DELTA_SCALE,
     )
+    
+    topk_hat, _, _ = sftm.adaptive_softmax(x)
+    budgets = sftm.bandits.it
 
     is_correct = np.allclose(np.sort(topk_hat), true_topk)
     total_budget = np.sum(budgets).item()
@@ -173,21 +167,14 @@ def single_run_adasoftmax(
     true_z = np.exp(beta * mu) / true_s
     true_topk = np.sort(np.argpartition(mu, -k)[-k:])
 
-    indices, z_hat, budget = ada_softmax(
-        A=A,
-        x=x,
-        epsilon=epsilon,
-        delta=delta,
-        samples_for_sigma=TEST_SAMPLES_FOR_SIGMA,
-        beta=beta,
-        k=k,
-        importance=importance,
-        verbose=False,
-    )
+    sftm = SFTM(A, multiplicative_error=epsilon, failure_probability=delta, temperature=beta, query_importance_sampling=importance)
+
+    indices, z_hat, _ = sftm.adaptive_softmax(x)
+    budget = np.sum(sftm.bandits.it)
     indices = np.sort(indices)
 
     # Test results
-    error = np.abs(z_hat[indices] - true_z[true_topk]) / true_z[true_topk]
+    error = np.abs(z_hat - true_z[true_topk]) / true_z[true_topk]
     in_bounds = error <= epsilon  
 
     return in_bounds, error, budget
