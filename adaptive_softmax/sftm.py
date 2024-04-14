@@ -6,7 +6,10 @@ from scipy.special import logsumexp, softmax
 from bandits_softmax import BanditsSoftmax
 
 # TODO add documentation
-# TODO pull in Ryan's code
+# TODO add comments to assertions
+# TODO add constants from constants.py
+# TODO add comments and verboseness from adasoftmax
+# TODO estimate sigma^2
 
 class SFTM:
   def __init__(self,

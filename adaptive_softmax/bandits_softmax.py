@@ -2,11 +2,6 @@ import numpy as np
 import torch
 from hadamard_transform import hadamard_transform as ht
 
-# TODO tensor-ify
-# TODO estimate sigma^2
-# TODO add documentation
-# TODO add comments to assertions
-
 def generate_weighted_permutation(weights: np.ndarray, gen=np.random.default_rng(0)):
   assert np.all(weights >= 0)
   with np.errstate(divide='ignore'):
