@@ -10,6 +10,7 @@ from bandits_softmax import BanditsSoftmax
 # TODO add constants from constants.py
 # TODO add comments and verboseness from adasoftmax
 # TODO estimate sigma^2
+# TODO use sftm in experiments
 
 class SFTM:
   def __init__(self,
