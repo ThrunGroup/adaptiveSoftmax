@@ -1,46 +1,49 @@
 import numpy as np
-import torch
 
+from adaptive_softmax.sftm import SFTM
 from mnl.mnl_utils import load_A_and_xs
 from mnl.mnl_constants import *
 from .test_utils import single_run_adasoftmax
 
-
-
 def epsilon_check(dataset):
     A, xs = load_A_and_xs(dataset)
-    import ipdb; ipdb.set_trace()
+    # this is the preprocessing
+    sftm = SFTM(
+        A, 
+        multiplicative_error=MNL_TEST_EPSILON, 
+        failure_probability=MNL_TEST_DELTA, 
+        temperature=MNL_TEST_BETA, 
+        query_importance_sampling=MNL_TEST_IMPORTANCE
+    )
     in_bounds, error, budget = single_run_adasoftmax(
-        A=A,
+        sftm=sftm,
         x=xs[0],
         k=MNL_TEST_TOPK,
-        beta=MNL_TEST_BETA,
-        delta=MNL_TEST_DELTA,
-        epsilon=MNL_TEST_EPSILON,
-        importance=MNL_TEST_IMPORTANCE,
     )
     n, d = A.shape
     return in_bounds, budget, n * d
 
 def delta_check(dataset):
     A, xs = load_A_and_xs(dataset)
-    n, d = A.shape
+    sftm = SFTM(
+        A, 
+        multiplicative_error=MNL_TEST_EPSILON, 
+        failure_probability=MNL_TEST_DELTA, 
+        temperature=MNL_TEST_BETA, 
+        query_importance_sampling=MNL_TEST_IMPORTANCE
+    )
 
+    n, d = A.shape
     total_wrong = 0
     total_budget = 0
-
     for i in range(min(xs.shape[0], NUM_EXPERIMENTS)):
         np.random.seed(i)
 
         # adasoftmax
         in_bounds, error, budget = single_run_adasoftmax(
-            A=A,
+            sftm=SFTM,
             x=xs[i],
             k=MNL_TEST_TOPK,
-            beta=MNL_TEST_BETA,
-            delta=MNL_TEST_DELTA,
-            epsilon=MNL_TEST_EPSILON,
-            importance=MNL_TEST_IMPORTANCE,
         )
         total_wrong += int(not in_bounds)
         total_budget += budget

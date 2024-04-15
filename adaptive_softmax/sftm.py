@@ -3,7 +3,7 @@ from typing import Tuple
 from math import log, ceil, sqrt
 from scipy.special import logsumexp, softmax
 
-from bandits_softmax import BanditsSoftmax
+from adaptive_softmax.bandits_softmax import BanditsSoftmax
 
 # TODO add documentation
 # TODO add comments to assertions
@@ -45,10 +45,12 @@ class SFTM:
     # NOTE the matrix A may be transformed to reduce variance
     self.max_pulls = self.bandits.d
 
-  def softmax(self, x: np.ndarray) -> np.ndarray:
-    return softmax(self.A @ x)
+  def softmax(self, x: np.ndarray, k: int) -> np.ndarray:
+    mu = self.A @ x
+    top_k = np.sort(np.argpartition(mu, -k)[-k:])
+    return top_k, softmax(mu)
 
-  def adaptive_softmax(self, x: np.ndarray) -> Tuple[int, float]:
+  def adaptive_softmax(self, x: np.ndarray, k: int=1) -> Tuple[int, float]:
     bta = self.temperature
     eps = self.multiplicative_error
     dlt = self.failure_probability
@@ -60,14 +62,14 @@ class SFTM:
     # mu_star_hat = self.estimate_arm_logit(x, i_star_hat, bta, eps/4, dlt/3, sig2)
     # log_S_hat = self.log_norm_estimation(x, bta, eps/4, dlt/3, sig2)
 
-    i_star_hat = self.best_arms(dlt/2, bta, sig2, k=1)
+    i_star_hat = self.best_arms(dlt/2, bta, sig2, k)
     mu_star_hat = self.bandits.exact_values(i_star_hat)
     log_S_hat = self.log_norm_estimation(bta, eps, dlt/2, sig2)
 
     return i_star_hat, np.exp(bta * mu_star_hat - log_S_hat), np.exp(log_S_hat)
   
   # Algorithm 3 (https://proceedings.neurips.cc/paper_files/paper/2013/file/598b3e71ec378bd83e0a727608b5db01-Paper.pdf)
-  def best_arms(self, dlt: float, bta: float, sig2: float, k: int=1) -> int:
+  def best_arms(self, dlt: float, bta: float, sig2: float, k: int) -> int:
     n = self.n
     d = self.max_pulls
     T0 = int(ceil(min(d, 17 * (bta ** 2) * sig2 * log(6 * n / dlt))))

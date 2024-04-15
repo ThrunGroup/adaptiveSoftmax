@@ -144,7 +144,7 @@ def load_A_and_xs(
     else:
         out_channel = EUROSAT_OUT_CHANNEL
 
-    path = f'{dataset}_out{out_channel}_iter{train_iterations}'
+    path = f'{dataset}_out{out_channel}_iter{train_iterations}.npy'
     if testing: 
         path = f'testing_{path}'
 

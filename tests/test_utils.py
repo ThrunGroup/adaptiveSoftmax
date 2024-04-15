@@ -28,7 +28,6 @@ def construct_sanity_example(
 
     return A, x
 
-
 def construct_random_example(
     n: int,
     d: int,    
@@ -150,32 +149,23 @@ def single_run_topk(
 
 
 def single_run_adasoftmax(
-    A: np.ndarray,
+    sftm: SFTM,
     x: np.ndarray,
     k: int,
-    beta: float,
-    delta: float,
-    epsilon: float,
-    importance: bool,
 ) -> Tuple[bool, int]:
     """
     Single run of the adaSoftmax algorithm.
     :returns: whether eps is in bounds, error, total budget
     """
-    mu = A @ x
-    true_s = np.sum(np.exp(beta * mu))
-    true_z = np.exp(beta * mu) / true_s
-    true_topk = np.sort(np.argpartition(mu, -k)[-k:])
-
-    sftm = SFTM(A, multiplicative_error=epsilon, failure_probability=delta, temperature=beta, query_importance_sampling=importance)
-
-    indices, z_hat, _ = sftm.adaptive_softmax(x)
+    indices, z = sftm.softmax(x, k)
+    indices_hat, z_hat, _ = sftm.adaptive_softmax(x)
+    indices_hat = np.sort(indices_hat)
+    assert(np.array_equal(indices, indices_hat))
+    
+    # test results
+    error = np.abs(z_hat - z[indices]) / z[indices]
+    in_bounds = error <= sftm.multiplicative_error  
     budget = np.sum(sftm.bandits.it)
-    indices = np.sort(indices)
-
-    # Test results
-    error = np.abs(z_hat - true_z[true_topk]) / true_z[true_topk]
-    in_bounds = error <= epsilon  
 
     return in_bounds, error, budget
 

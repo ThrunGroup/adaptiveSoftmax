@@ -50,7 +50,6 @@ def test_epsilon(
         starting_mu=None,
         starting_budget=None,
     )
-
     assert (correct)
     assert (budget < n * d / BUDGET_IMPROVEMENT)
 
@@ -83,7 +82,6 @@ def test_delta(
             starting_mu=None,
             starting_budget=None,
         )
-        print(i)
         total_wrong += int(not correct)
         total_budget += budget
 

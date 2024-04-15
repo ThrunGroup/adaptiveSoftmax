@@ -5,6 +5,7 @@ from .test_utils import (
     construct_random_example,
     single_run_adasoftmax
 )
+from adaptive_softmax.sftm import SFTM
 from adaptive_softmax.constants import (
     NUM_TESTS,
     NUM_ROWS,
@@ -33,16 +34,20 @@ def test_epsilon(
     else:
         A, x = construct_random_example(n, d, mu=None)
 
-    in_bounds, error, budget = single_run_adasoftmax(
-        A=A,
-        x=x,
-        k=TEST_TOPK,
-        beta=TEST_BETA,
-        delta=TEST_DELTA,
-        epsilon=TEST_EPSILON,
-        importance=TEST_IMPORTANCE,
+    # this is the preprocessing
+    sftm = SFTM(
+        A, 
+        multiplicative_error=TEST_EPSILON, 
+        failure_probability=TEST_DELTA, 
+        temperature=TEST_BETA, 
+        query_importance_sampling=TEST_IMPORTANCE
     )
 
+    in_bounds, error, budget = single_run_adasoftmax(
+        sftm=sftm,
+        x=x,
+        k=TEST_TOPK,
+    )
     assert (in_bounds)
     assert (budget < n * d / BUDGET_IMPROVEMENT)
 
@@ -62,15 +67,19 @@ def test_delta(
 
     for i in range(num_tests):
         A, x = construct_random_example(n, d, mu=None)
+        # this is the preprocessing
+        sftm = SFTM(
+            A, 
+            multiplicative_error=TEST_EPSILON, 
+            failure_probability=TEST_DELTA, 
+            temperature=TEST_BETA, 
+            query_importance_sampling=TEST_IMPORTANCE
+        )
 
         in_bounds, error, budget = single_run_adasoftmax(
-            A=A,
+            sftm=sftm,
             x=x,
             k=TEST_TOPK,
-            beta=TEST_BETA,
-            delta=TEST_DELTA,
-            epsilon=TEST_EPSILON,
-            importance=TEST_IMPORTANCE,
         )
         total_wrong += int(not in_bounds)
         total_budget += budget
