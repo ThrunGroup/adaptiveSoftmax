@@ -1,7 +1,7 @@
 import numpy as np
-from bandits_softmax import BanditsSoftmax
+from adaptive_softmax.bandits_softmax import BanditsSoftmax
 
-from constants import (
+from adaptive_softmax.constants import (
   NUM_ROWS,
   NUM_COLS,
   TEST_SEED,

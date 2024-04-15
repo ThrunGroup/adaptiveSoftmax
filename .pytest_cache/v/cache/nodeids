@@ -1,6 +1,9 @@
 [
   "tests/test_algorithm.py::test_delta",
   "tests/test_algorithm.py::test_epsilon",
+  "tests/test_bandits.py::test_additional_importance_sampling",
+  "tests/test_bandits.py::test_importance_sampling",
+  "tests/test_bandits.py::test_randomized_hadamard_transform",
   "tests/test_mnl.py::test_delta_mnl",
   "tests/test_mnl.py::test_delta_mnl_eurosat",
   "tests/test_mnl.py::test_delta_mnl_mnist",
