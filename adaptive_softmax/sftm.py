@@ -45,7 +45,7 @@ class SFTM:
     # NOTE the matrix A may be transformed to reduce variance
     self.max_pulls = self.bandits.d
 
-  def softmax(self, x: np.ndarray, k: int) -> np.ndarray:
+  def softmax(self, x: np.ndarray, k: int=1) -> np.ndarray:
     mu = self.A @ x
     top_k = np.sort(np.argpartition(mu, -k)[-k:])
     return top_k, softmax(mu)

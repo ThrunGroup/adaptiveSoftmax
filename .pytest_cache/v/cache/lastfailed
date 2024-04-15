@@ -8,5 +8,6 @@
   "tests/test_mnl.py::test_delta_mnl": true,
   "tests/test_mnl.py::test_eps_mnl_eurosat": true,
   "tests/test_mnl.py::test_delta_mnl_eurosat": true,
-  "tests/test_mnl.py::test_eps_mnl_mnist": true
+  "tests/test_mnl.py::test_eps_mnl_mnist": true,
+  "tests/test_mnl.py::test_delta_mnl_mnist": true
 }

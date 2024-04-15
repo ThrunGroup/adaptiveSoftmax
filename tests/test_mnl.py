@@ -41,7 +41,7 @@ def delta_check(dataset):
 
         # adasoftmax
         in_bounds, error, budget = single_run_adasoftmax(
-            sftm=SFTM,
+            sftm=sftm,
             x=xs[i],
             k=MNL_TEST_TOPK,
         )
