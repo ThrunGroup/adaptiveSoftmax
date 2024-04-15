@@ -77,7 +77,7 @@ class BanditsSoftmax:
   def bandit_range(self):
     assert self._x is not None
 
-    return 2 * self._max_abs_atom_value * self._max_abs_query_value * np.sqrt(self.d)
+    return 2 * self._max_abs_atom_value * self._max_abs_query_value * self.d
 
   def set_query(self, x: np.ndarray):
     assert x.size <= self.d if self.randomized_hadamard_transform else x.size == self.d

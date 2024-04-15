@@ -1,23 +1,37 @@
 import numpy as np
-import torch 
+import torch
+import torch.nn as nn
 from .mnl_constants import *
 
 class BaseModel(torch.nn.Module):
     def __init__(self, in_channel, out_channel):
         super(BaseModel, self).__init__()
-        self.conv = torch.nn.Conv2d(
-            in_channels=in_channel, 
-            out_channels=out_channel, 
-            kernel_size=CONST_KERNEL_SIZE, 
-            padding=CONST_PADDING,
-            stride=CONST_STRIDE,
+
+        # first block
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(
+                in_channels=in_channel, 
+                out_channels=out_channel, 
+                kernel_size=CONST_KERNEL_SIZE, 
+                padding=CONST_PADDING,
+                stride=CONST_STRIDE,
+            ),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=POOLING)
         )
-        # this halves the dimension
-        self.pool = torch.nn.MaxPool2d(
-            kernel_size=POOLING, 
-            stride=CONST_STRIDE * 2,
+
+        # second block
+        self.conv2 = nn.Sequential(         
+            nn.Conv2d(
+                in_channels=out_channel, 
+                out_channels=out_channel * 2, 
+                kernel_size=CONST_KERNEL_SIZE, 
+                padding=CONST_PADDING,
+                stride=CONST_STRIDE
+            ),     
+            nn.ReLU(),                      
+            nn.MaxPool2d(2),                
         )
-        self.dropout = torch.nn.Dropout(DROPOUT)
         self.linear = None  
         
     def forward(self, x):
@@ -40,11 +54,9 @@ class BaseModel(torch.nn.Module):
         :param x: raw data
         :return: transformed 1D vector
         """
-        with torch.no_grad():
-            x = self.conv(x)
-            x = torch.nn.functional.relu(x)
-            x = self.pool(x)
-            out = torch.flatten(x, start_dim=1)
+        x = self.conv1(x)
+        # x = self.conv2(x)
+        out = torch.flatten(x, start_dim=1)
         return out
       
     def extract_features(self, dataloader, device):

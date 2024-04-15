@@ -16,7 +16,7 @@ def train_base_model(
     model: torch.nn.Module,
     device: torch.device,   # TODO: should this be str?
     max_iter: int = TRAINING_ITERATIONS,
-    verbose: bool = False,
+    verbose: bool = True,
 ) -> None:
     """
     Trains base model.
@@ -24,25 +24,22 @@ def train_base_model(
     model.train()
 
     criterion = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters())
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 
     for epoch in range(max_iter):
-        avg_loss = 0
         for data, labels in dataloader:
             data = data.to(device)
             labels = labels.to(device)
 
             optimizer.zero_grad()
 
-            output = model(data)
+            output = model(data)    # logits
             loss = criterion(output, labels)
             loss.backward()
             optimizer.step()
 
-            avg_loss += loss / BATCH_SIZE
-
         if verbose:
-            print(f"epoch {epoch} => loss: {avg_loss}")
+            print(f"epoch {epoch} => loss: {loss}")
 
 
 def test_accuracy(

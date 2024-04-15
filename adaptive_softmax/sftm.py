@@ -1,6 +1,6 @@
 import numpy as np
 from typing import Tuple
-from math import log, ceil, sqrt
+from math import log, ceil, sqrt, exp
 from scipy.special import logsumexp, softmax
 
 from adaptive_softmax.bandits_softmax import BanditsSoftmax
@@ -83,12 +83,13 @@ class SFTM:
       # pull arms and update confidence interval
       estimates = self.bandits.batch_pull(confidence_set, it=num_pulls)
       confidence_interval = sqrt(2 * sig2 * log(6 * n * log(d) / dlt) / num_pulls)
-
+      
       # finite population correction
       confidence_interval *= np.sqrt((d - num_pulls) / (d - 1))
-      
+
       # update confidence set
       keep = estimates >= np.max(estimates) * (1 - confidence_interval)
+      #keep = estimates >= np.max(estimates) - confidence_interval
 
       # check stopping condition
       if np.sum(keep) <= k:

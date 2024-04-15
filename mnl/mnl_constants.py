@@ -1,13 +1,12 @@
 # conv layer (CONST_* means it keeps the dimension)
-CONST_KERNEL_SIZE = 3
+CONST_KERNEL_SIZE = 5
 CONST_STRIDE = 1
-CONST_PADDING = 1
+CONST_PADDING = 2
 POOLING = 2    # halves the dimension    
-DROPOUT = 0.25
 
 NUM_CLASSES = 10
-TRAINING_ITERATIONS = 10
-BATCH_SIZE = 256
+TRAINING_ITERATIONS = 10    # this is num epochs
+BATCH_SIZE = 64
 
 # mnist 
 MNIST = "mnist"

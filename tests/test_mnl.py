@@ -7,7 +7,7 @@ from .test_utils import single_run_adasoftmax
 
 def epsilon_check(dataset):
     A, xs = load_A_and_xs(dataset)
-    # this is the preprocessing
+    n, d = A.shape
     sftm = SFTM(
         A, 
         multiplicative_error=MNL_TEST_EPSILON, 
@@ -20,7 +20,6 @@ def epsilon_check(dataset):
         x=xs[0],
         k=MNL_TEST_TOPK,
     )
-    n, d = A.shape
     return in_bounds, budget, n * d
 
 def delta_check(dataset):
