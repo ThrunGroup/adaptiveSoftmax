@@ -88,7 +88,7 @@ class SFTM:
       confidence_interval *= np.sqrt((d - num_pulls) / (d - 1))
 
       # update confidence set
-      keep = estimates >= np.max(estimates) * (1 - confidence_interval)
+      keep = estimates >= np.max(estimates) - confidence_interval
       #keep = estimates >= np.max(estimates) - confidence_interval
 
       # check stopping condition
