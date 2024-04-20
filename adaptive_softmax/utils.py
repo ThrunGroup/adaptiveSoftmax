@@ -14,6 +14,10 @@ from .constants import (
 )
 
 
+def fpc(it: np.ndarray, d: int) -> int:
+    return np.ceil(it / (1 + (it - 1) / d)).astype(int)
+
+
 def approx_sigma(
     A: np.ndarray,
     x: np.ndarray,

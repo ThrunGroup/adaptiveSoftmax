@@ -4,13 +4,12 @@ from math import log, ceil, sqrt, exp
 from scipy.special import logsumexp, softmax
 
 from adaptive_softmax.bandits_softmax import BanditsSoftmax
+from adaptive_softmax.utils import fpc
 
 # TODO add documentation
 # TODO add comments to assertions
 # TODO add constants from constants.py
 # TODO add comments and verboseness from adasoftmax
-# TODO estimate sigma^2
-# TODO use sftm in experiments
 
 class SFTM:
   def __init__(self,
@@ -18,10 +17,10 @@ class SFTM:
                temperature: float = 1.0,
                multiplicative_error: float = 3e-1,
                failure_probability: float = 1e-1,
-               noise_bound: float = 1,
+               noise_bound: float = None,
                atom_importance_sampling: bool = True,
                query_importance_sampling: bool = True,
-               randomized_hadamard_transform: bool = True,
+               randomized_hadamard_transform: bool = False,
                verbose: bool = False,
                seed=42):
     self.A = A
@@ -42,21 +41,18 @@ class SFTM:
       seed=seed,
     )
 
-    # NOTE the matrix A may be transformed to reduce variance
-    self.max_pulls = self.bandits.d
-
-  def softmax(self, x: np.ndarray, k: int=1) -> np.ndarray:
+  def softmax(self, x: np.ndarray, k: int=1) -> Tuple[np.ndarray, np.ndarray]:
     mu = self.A @ x
     top_k = np.sort(np.argpartition(mu, -k)[-k:])
     return top_k, softmax(mu)
 
   def adaptive_softmax(self, x: np.ndarray, k: int=1) -> Tuple[int, float]:
+    self.bandits.set_query(x)
+
     bta = self.temperature
     eps = self.multiplicative_error
     dlt = self.failure_probability
-    sig2 = self.noise_bound
-
-    self.bandits.set_query(x)
+    sig2 = self.noise_bound if self.noise_bound is not None else self.bandits.variance
 
     # i_star_hat = self.best_arm(x, dlt/3, bta, sig2)
     # mu_star_hat = self.estimate_arm_logit(x, i_star_hat, bta, eps/4, dlt/3, sig2)
@@ -71,7 +67,7 @@ class SFTM:
   # Algorithm 3 (https://proceedings.neurips.cc/paper_files/paper/2013/file/598b3e71ec378bd83e0a727608b5db01-Paper.pdf)
   def best_arms(self, dlt: float, bta: float, sig2: float, k: int) -> int:
     n = self.n
-    d = self.max_pulls
+    d = self.bandits.max_pulls
     T0 = int(ceil(min(d, 17 * (bta ** 2) * sig2 * log(6 * n / dlt))))
 
     # initialize parameters
@@ -79,17 +75,15 @@ class SFTM:
     num_pulls = T0
     estimates = np.zeros(n)
 
+    # TODO prevent infinite loop (for equl values) nicely
+
     while True:
       # pull arms and update confidence interval
-      estimates = self.bandits.batch_pull(confidence_set, it=num_pulls)
+      estimates = self.bandits.batch_pull(confidence_set, it=fpc(num_pulls, d))
       confidence_interval = sqrt(2 * sig2 * log(6 * n * log(d) / dlt) / num_pulls)
-      
-      # finite population correction
-      confidence_interval *= np.sqrt((d - num_pulls) / (d - 1))
 
       # update confidence set
       keep = estimates >= np.max(estimates) - confidence_interval
-      #keep = estimates >= np.max(estimates) - confidence_interval
 
       # check stopping condition
       if np.sum(keep) <= k:
@@ -97,25 +91,26 @@ class SFTM:
 
       # update parameters
       confidence_set = confidence_set[keep]
-      num_pulls = min(d, num_pulls * 2)
+      num_pulls = num_pulls * 2
 
     return confidence_set[np.argsort(estimates)[-k:]]
 
   # Appendix Lemma 2 (Exponential best arm estimation)
   def estimate_arm_logits(self, arms: np.ndarray, bta: float, eps: float, dlt: float, sig2: float) -> float:
-    T = int(ceil(min(self.max_pulls, 32 * (sig2) * (bta ** 2) * log(2 / dlt) / (eps ** 2))))
-    return self.bandits.pull(arms, its=np.array(T))
+    d = self.bandits.max_pulls
+    T = int(ceil(min(d, 32 * (sig2) * (bta ** 2) * log(2 / dlt) / (eps ** 2))))
+    return self.bandits.pull(arms, its=np.array(fpc(T, d)))
   
   # Algorithm 2 (Normalization estimation)
   def log_norm_estimation(self, bta: float, eps: float, dlt: float, sig2: float) -> float:
     # initialize params and make initial estimates (lines 1-5)    
     n = self.n
-    d = self.max_pulls
+    d = self.bandits.max_pulls
 
     T0 = int(ceil(min(d, 17 * (bta ** 2) * sig2 * log(6 * n / dlt))))
     C = np.sqrt(2 * sig2 * log(6 * n / dlt) / T0)
     
-    mu_hat = self.bandits.pull(np.arange(n), its=np.full(shape=n, fill_value=T0))
+    mu_hat = self.bandits.pull(np.arange(n), its=np.full(shape=n, fill_value=fpc(T0, d)))
 
     log_alpha = bta * (mu_hat - C)
     log_gamma = bta * (mu_hat - C) / 2
@@ -133,7 +128,7 @@ class SFTM:
     it = np.minimum(it, d)
     it = np.ceil(it).astype(int)
 
-    mu_hat = self.bandits.pull(np.arange(n), its=it)
+    mu_hat = self.bandits.pull(np.arange(n), its=fpc(it, d))
 
     return logsumexp(bta * mu_hat)
     

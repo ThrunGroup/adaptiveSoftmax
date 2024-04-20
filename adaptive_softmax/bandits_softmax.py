@@ -17,7 +17,7 @@ class BanditsSoftmax:
       temperature: float = 1.0,
       atom_importance_sampling=True,
       query_importance_sampling=True,
-      randomized_hadamard_transform=True,
+      randomized_hadamard_transform=False,
       verbose=False,
       seed=42):
     
@@ -43,9 +43,14 @@ class BanditsSoftmax:
       self._A = ht(torch.tensor(self._A * self._rademacher)).numpy()
 
     self._atom_weights = np.sum(np.abs(self._A), axis=0) if atom_importance_sampling else np.ones(self.d)
-    self._max_abs_atom_value = np.max(np.abs(self._A))
-    self._max_abs_query_value = None
     self._permutation, self._logits, self._perturbed_logits = generate_weighted_permutation(self._atom_weights, gen=self._gen)
+    
+    # TODO deal with all-zero columns here
+
+    q = (self._atom_weights / np.sum(self._atom_weights))[np.newaxis, :]
+    self._est_atom_sig2 = np.max(np.sum((self._A / q / self.d) ** 2 * q, axis=1))
+    self._est_query_sig2 = None
+    self._sparse_columns = None
 
     self._Ap = None if self.query_importance_sampling else self._A[:, self._permutation].copy()
     self._xp = None
@@ -71,13 +76,15 @@ class BanditsSoftmax:
   
   @property
   def max_pulls(self):
-    return self.d
-
-  @property
-  def bandit_range(self):
     assert self._x is not None
 
-    return 2 * self._max_abs_atom_value * self._max_abs_query_value * self.d
+    return self.d - self._num_sparse_columns
+  
+  @property
+  def variance(self):
+    assert self._x is not None
+    
+    return self._est_atom_sig2 * self._est_query_sig2 * (self.max_pulls ** 2) # TODO change back to sparsity-based but with correct mean
 
   def set_query(self, x: np.ndarray):
     assert x.size <= self.d if self.randomized_hadamard_transform else x.size == self.d
@@ -92,10 +99,13 @@ class BanditsSoftmax:
 
     if self.query_importance_sampling:
       query_weights = np.abs(self._x)
-      self._permutation, self._logits, self._perturbed_logits = generate_weighted_permutation(self._atom_weights * query_weights, gen=self._gen)
+      self._permutation, self._logits, self._perturbed_logits = generate_weighted_permutation(query_weights * self._atom_weights, gen=self._gen)
     
-    self._max_abs_query_value = np.max(np.abs(self._x))
     self._xp = self._x[self._permutation].copy()
+
+    self._num_sparse_columns = np.sum(np.isneginf(self._logits))
+    n_nonzero = self.d - self._num_sparse_columns
+    self._est_query_sig2 = np.mean(np.abs(self._xp[:n_nonzero])) ** 2 if self.query_importance_sampling else np.mean(self._xp[:n_nonzero] ** 2)
 
     if self.verbose:
       print(f'Query:\n{x}')
@@ -109,10 +119,10 @@ class BanditsSoftmax:
   def exact_values(self, arms: np.ndarray) -> np.ndarray:
     assert self._x is not None
 
-    if np.any(self.it[arms] < self.d):
+    if np.any(self.it[arms] < self.max_pulls):
       A_arms = self._A[arms, self._permutation] if self._Ap is None else self._Ap[arms]
       self._estimates[arms] = (A_arms @ self._xp) * self.temperature
-      self._it[arms] = self.d
+      self._it[arms] = self.max_pulls
     
     return self._estimates[arms]
   
@@ -138,12 +148,13 @@ class BanditsSoftmax:
       return self._estimates[arms]
     
     prev_it = self._it[arms][0]
-    next_it = min(it, self.d)
+    next_it = min(it, self.max_pulls)
 
     # importance sampling
     if self.atom_importance_sampling or self.query_importance_sampling:
-      weights = 1 if next_it == self.d \
-         else 1 - np.exp(-np.exp(self._logits[self._permutation[:next_it]] - self._perturbed_logits[self._permutation[next_it]]))
+      threshold = -np.inf if next_it == self.max_pulls else self._perturbed_logits[self._permutation[next_it]]
+      weights = 1 - np.exp(-np.exp(self._logits[self._permutation[:next_it]] - threshold))
+      weights = np.nan_to_num(weights, nan=1) # NOTE nan values have prob 0 and will never be selected
 
       A = (self._A[np.ix_(arms, self._permutation[:next_it])] if self._Ap is None else self._Ap[arms, :next_it]).reshape((len(arms), next_it))
       x = self._xp[:next_it] / weights
@@ -152,7 +163,7 @@ class BanditsSoftmax:
     # no importance sampling (equal weighting)
     else:
       self._estimates[arms] *= prev_it
-      self._estimates[arms] += (self._Ap[arms, prev_it:next_it] @ self._xp[prev_it:next_it]) * (self.d * self.temperature)
+      self._estimates[arms] += (self._Ap[arms, prev_it:next_it] @ self._xp[prev_it:next_it]) * (self.max_pulls * self.temperature)
       self._estimates[arms] /= next_it
 
     self._it[arms] = next_it

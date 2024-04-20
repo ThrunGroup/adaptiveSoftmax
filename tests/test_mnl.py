@@ -9,7 +9,7 @@ def epsilon_check(dataset):
     A, xs = load_A_and_xs(dataset)
     n, d = A.shape
     sftm = SFTM(
-        A, 
+        A,
         multiplicative_error=MNL_TEST_EPSILON, 
         failure_probability=MNL_TEST_DELTA, 
         temperature=MNL_TEST_BETA, 
