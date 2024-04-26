@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 from hadamard_transform import hadamard_transform as ht
+from math import ceil
 
 def generate_weighted_permutation(weights: np.ndarray, gen=np.random.default_rng(0)):
   assert np.all(weights >= 0)
@@ -15,6 +16,8 @@ class BanditsSoftmax:
       self,
       A: np.ndarray,
       temperature: float = 1.0,
+      fudge_pull: float = 1.0,
+      fudge_sigma2: float = 1.0,
       atom_importance_sampling=True,
       query_importance_sampling=True,
       randomized_hadamard_transform=False,
@@ -26,6 +29,8 @@ class BanditsSoftmax:
     self.n = A.shape[0]
     self.d = A.shape[1]
     self.temperature = temperature
+    self.fudge_pull = fudge_pull
+    self.fudge_sigma2 = fudge_sigma2
     self.atom_importance_sampling = atom_importance_sampling
     self.query_importance_sampling = query_importance_sampling
     self.randomized_hadamard_transform = randomized_hadamard_transform
@@ -84,7 +89,7 @@ class BanditsSoftmax:
   def variance(self):
     assert self._x is not None
     
-    return self._est_atom_sig2 * self._est_query_sig2 * (self.max_pulls ** 2) # TODO change back to sparsity-based but with correct mean
+    return self._est_atom_sig2 * self._est_query_sig2 * (self.max_pulls ** 2) * (self.temperature ** 2) * self.fudge_sigma2
 
   def set_query(self, x: np.ndarray):
     assert x.size <= self.d if self.randomized_hadamard_transform else x.size == self.d
@@ -143,6 +148,8 @@ class BanditsSoftmax:
   def batch_pull(self, arms: np.ndarray, it: int) -> np.ndarray:
     assert self._x is not None
     assert np.unique(self._it[arms]).size <= 1
+
+    it = int(ceil(self.fudge_pull * it))
 
     if arms.size == 0 or it <= self._it[0]:
       return self._estimates[arms]

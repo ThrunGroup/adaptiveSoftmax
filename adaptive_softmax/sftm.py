@@ -18,6 +18,8 @@ class SFTM:
                multiplicative_error: float = 3e-1,
                failure_probability: float = 1e-1,
                noise_bound: float = None,
+               fudge_pull: float = 1.0,
+               fudge_sigma2: float = 1.0,
                atom_importance_sampling: bool = True,
                query_importance_sampling: bool = True,
                randomized_hadamard_transform: bool = False,
@@ -34,6 +36,8 @@ class SFTM:
     self.bandits = BanditsSoftmax(
       A,
       temperature=temperature,
+      fudge_pull=fudge_pull,
+      fudge_sigma2=fudge_sigma2,
       atom_importance_sampling=atom_importance_sampling,
       query_importance_sampling=query_importance_sampling,
       randomized_hadamard_transform=randomized_hadamard_transform,
@@ -42,7 +46,7 @@ class SFTM:
     )
 
   def softmax(self, x: np.ndarray, k: int=1) -> Tuple[np.ndarray, np.ndarray]:
-    mu = self.A @ x
+    mu = (self.A @ x) * self.temperature
     top_k = np.sort(np.argpartition(mu, -k)[-k:])
     return top_k, softmax(mu)
 
@@ -78,6 +82,7 @@ class SFTM:
     # TODO prevent infinite loop (for equl values) nicely
 
     while True:
+
       # pull arms and update confidence interval
       estimates = self.bandits.batch_pull(confidence_set, it=fpc(num_pulls, d))
       confidence_interval = sqrt(2 * sig2 * log(6 * n * log(d) / dlt) / num_pulls)
