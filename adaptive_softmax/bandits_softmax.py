@@ -93,9 +93,8 @@ class BanditsSoftmax:
     self._atom_weights = np.sum(np.abs(self._A), axis=0) if atom_importance_sampling else np.ones(self.d)
     self._permutation, self._logits, self._perturbed_logits = generate_weighted_permutation(self._atom_weights, gen=self._gen)
     
-    # TODO deal with all-zero columns here
-
-    q = (self._atom_weights / np.sum(self._atom_weights))[np.newaxis, :]
+    q = (self._atom_weights / (np.sum(self._atom_weights)) )[np.newaxis, :]
+    q[q == 0 | np.isnan(q)] = 1 # NOTE 0-weight columns will never be selected
     self._est_atom_sig2 = np.max(np.sum((self._A / q / self.d) ** 2 * q, axis=1))
     self._est_query_sig2 = None
     self._sparse_columns = None
