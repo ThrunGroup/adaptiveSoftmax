@@ -28,16 +28,30 @@ class BanditsSoftmax:
   handle arm pulls and the resulting updates to the estimated mean of each 
   bandit arm for the adaptive softmax computation. The class is meant to be used
   in conjunction with the SFTM class.
-  
-  @param A: The matrix of atoms
-  @param temperature: The temperature of the softmax
-  @param fudge_pull: The fudge factor for the number of pulls
-  @param fudge_sigma2: The fudge factor for the estimate of variance
-  @param atom_importance_sampling: Whether to use importance sampling based on atom weights
-  @param query_importance_sampling: Whether to use importance sampling based on query weights
-  @param randomized_hadamard_transform: Whether to use a randomized Hadamard transform
-  @param verbose: Whether to print debug information
-  @param seed: The seed for the random number generator
+
+  Parameters
+  ----------
+  A : np.ndarray
+    The atom matrix A of shape (n, d) for the matrix-vector multiplication.
+  temperature : float, optional
+    The temperature of the softmax, by default 1.0
+  fudge_pull : float, optional
+    The fudge factor for the number of pulls, by default 1.0
+  fudge_sigma2 : float, optional
+    The fudge factor for the estimate of variance, by default 1.0
+  atom_importance_sampling : bool, optional
+    The flag to enable atom-based importance sampling in the bandits algorithm,
+    by default True.
+  query_importance_sampling : bool, optional
+    The flag to enable query-based importance sampling in the bandits algorithm,
+    by default True.
+  randomized_hadamard_transform : bool, optional
+    The flag to enable randomized Hadamard transform of the atoms, by default
+    False.
+  verbose : bool, optional
+    The flag to enable verbose output, by default False.
+  seed : int, optional
+    The seed for the random number generator, by default 42.
   """
 
   def __init__(
@@ -224,10 +238,12 @@ class BanditsSoftmax:
     Pull the specified arms the given number of times and return their updated
     estimated values.
 
-    The updated estimated value is based on the mean of the first it columns of
-    the permutation. If the number of pulls exceeds the maximum number of pulls, 
-    the estimated value is not updated. If importance sampling is enabled, the
-    estimated value is re-weighted with the appropriate weights.
+    The updated estimated value is based on the first it columns of the
+    permutation. All arms must have been pulled the same amount in order to use
+    batching. If the number of pulls exceeds the maximum number of pulls, or the
+    arms have already been pulled it many times, the estimated value is not
+    updated. If importance sampling is enabled, the estimated value is re-
+    weighted accordingly.
 
     @param arms: The arms to pull
     @param it: The number of times to pull all arms
