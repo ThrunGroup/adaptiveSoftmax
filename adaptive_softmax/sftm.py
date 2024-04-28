@@ -162,7 +162,7 @@ class SFTM:
 
     n = self.n
     d = self.bandits.max_pulls
-    T0 = int(ceil(min(d, 17 * (bta ** 2) * sig2 * log(6 * n / dlt))))
+    T0 = int(ceil(17 * (bta ** 2) * sig2 * log(6 * n / dlt)))
 
     if self.verbose:
       print(f"Initial number of pulls: {T0}")
@@ -216,7 +216,7 @@ class SFTM:
     if self.verbose:
       print(f"Estimating logit values for arms {arms}...")
     d = self.bandits.max_pulls
-    T = int(ceil(min(d, 32 * (sig2) * (bta ** 2) * log(2 / dlt) / (eps ** 2))))
+    T = int(ceil(32 * (sig2) * (bta ** 2) * log(2 / dlt) / (eps ** 2)))
     return self.bandits.pull(arms, its=np.array(fpc(T, d)))
   
   def log_norm_estimation(self, bta: float, eps: float, dlt: float, sig2: float) -> float:
@@ -237,7 +237,7 @@ class SFTM:
     n = self.n
     d = self.bandits.max_pulls
 
-    T0 = int(ceil(min(d, 17 * (bta ** 2) * sig2 * log(6 * n / dlt))))
+    T0 = int(ceil(17 * (bta ** 2) * sig2 * log(6 * n / dlt)))
     C = np.sqrt(2 * sig2 * log(6 * n / dlt) / T0)
 
     if self.verbose:
@@ -263,7 +263,6 @@ class SFTM:
     it = np.exp(log_b)
     it = np.maximum(it, np.exp(log_c + log_gamma - log_gamma_sum))
     it = np.maximum(it, np.exp(log_d + log_alpha - log_alpha_sum))
-    it = np.minimum(it, d)
     it = np.ceil(it).astype(int)
 
     if self.verbose:
