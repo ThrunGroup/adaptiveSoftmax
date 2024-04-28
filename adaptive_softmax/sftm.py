@@ -6,8 +6,6 @@ from scipy.special import logsumexp, softmax
 from adaptive_softmax.bandits_softmax import BanditsSoftmax
 from adaptive_softmax.utils import fpc
 
-# TODO add constants from constants.py
-
 class SFTM:
   """
   Softmax Fast Top-k via Monte Carlo (SFTM) approximates the softmax function
