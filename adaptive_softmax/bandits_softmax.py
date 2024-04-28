@@ -4,6 +4,14 @@ from hadamard_transform import hadamard_transform as ht
 from math import ceil
 
 def generate_weighted_permutation(weights: np.ndarray, gen=np.random.default_rng(0)):
+  """
+  Generate a weighed permutation using the Gumbel trick. Any size-k prefix of
+  this permutation represents a weighted reservoir sample of size k.
+
+  @param weights: The non-negative weights to use for the permutation
+  @param gen: The random number generator to use
+  @return: The permutation, the logits, and the perturbed logits
+  """
   assert np.all(weights >= 0)
   with np.errstate(divide='ignore'):
     logits = np.log(weights) - np.log(np.sum(weights))
@@ -12,6 +20,26 @@ def generate_weighted_permutation(weights: np.ndarray, gen=np.random.default_rng
   return permutation, logits, perturbed_logits
 
 class BanditsSoftmax:
+  """
+  A class to handle the bandit problem used to perform adaptive softmax.
+
+  This class performs pre-computation based on the provided atoms to reduce the 
+  variance of the resulting arm pulls. Once a query is provided, the class can
+  handle arm pulls and the resulting updates to the estimated mean of each 
+  bandit arm for the adaptive softmax computation. The class is meant to be used
+  in conjunction with the SFTM class.
+  
+  @param A: The matrix of atoms
+  @param temperature: The temperature of the softmax
+  @param fudge_pull: The fudge factor for the number of pulls
+  @param fudge_sigma2: The fudge factor for the estimate of variance
+  @param atom_importance_sampling: Whether to use importance sampling based on atom weights
+  @param query_importance_sampling: Whether to use importance sampling based on query weights
+  @param randomized_hadamard_transform: Whether to use a randomized Hadamard transform
+  @param verbose: Whether to print debug information
+  @param seed: The seed for the random number generator
+  """
+
   def __init__(
       self,
       A: np.ndarray,
@@ -77,21 +105,45 @@ class BanditsSoftmax:
   
   @property
   def it(self):
+    """
+    The number of pulls for each arm.
+    """
     return self._it
   
   @property
   def max_pulls(self):
+    """
+    The maximum number of times any arm can be pulled.
+
+    This may be different from the different dimension of the provided atoms if
+    padding was performed for the randomized Hadamard transform or if the query
+    vector is sparse and query-based importance sampling is enabled.
+    """
     assert self._x is not None
 
     return self.d - self._num_sparse_columns
   
   @property
   def variance(self):
+    """
+    An upper bound of the variance of the bandit pulls.
+    """
     assert self._x is not None
     
     return self._est_atom_sig2 * self._est_query_sig2 * (self.max_pulls ** 2) * (self.temperature ** 2) * self.fudge_sigma2
 
   def set_query(self, x: np.ndarray):
+    """
+    Set the query vector for the bandit problem.
+
+    This method prepares the bandit problem for the provided query vector. The
+    query vector is padded with zeros if necessary and transformed using a
+    randomized Hadamard transform if enabled. If query-based importance sampling
+    is enabled, the query weights are computed based on the magnitude of entries
+    and the order in which column arms are pulled is re-sampled.
+
+    @param x: The query vector
+    """
     assert x.size <= self.d if self.randomized_hadamard_transform else x.size == self.d
 
     self._it = np.zeros(self.n, dtype=int)
@@ -122,6 +174,13 @@ class BanditsSoftmax:
         print(f'Permutation:\n{self._permutation}')
   
   def exact_values(self, arms: np.ndarray) -> np.ndarray:
+    """
+    Compute the exact value for the specified arms, save this value, and return
+    it.
+
+    @param arms: The arms for which to compute the exact value
+    @return: The exact values of the specified arms
+    """
     assert self._x is not None
 
     if np.any(self.it[arms] < self.max_pulls):
@@ -132,11 +191,26 @@ class BanditsSoftmax:
     return self._estimates[arms]
   
   def pull_arm(self, arm: int, it: int) -> float:
+    """
+    Pull an arm the given number of times and return its estimated value.
+
+    @param arm: The arm to pull
+    @param it: The number of times to pull the arm
+    @return: The updated estimated value of the arm
+    """
     assert self._x is not None
     
     return self.batch_pull(np.atleast_1d(arm), it)[0]
 
   def pull(self, arms: np.ndarray, its: np.ndarray) -> np.ndarray:
+    """
+    Pull the specified arms the provided number of times (may be distinct) and
+    return the arms' updated estimated values.
+
+    @param arms: The arms to pull
+    @param its: The number of times to pull each arm
+    @return: The updated estimated values of the specified arms
+    """
     assert self._x is not None
     assert arms.size == its.size
 
@@ -146,6 +220,19 @@ class BanditsSoftmax:
     return self._estimates[arms]
 
   def batch_pull(self, arms: np.ndarray, it: int) -> np.ndarray:
+    """
+    Pull the specified arms the given number of times and return their updated
+    estimated values.
+
+    The updated estimated value is based on the mean of the first it columns of
+    the permutation. If the number of pulls exceeds the maximum number of pulls, 
+    the estimated value is not updated. If importance sampling is enabled, the
+    estimated value is re-weighted with the appropriate weights.
+
+    @param arms: The arms to pull
+    @param it: The number of times to pull all arms
+    @return: The updated estimated values of the specified arms
+    """
     assert self._x is not None
     assert np.unique(self._it[arms]).size <= 1
 
