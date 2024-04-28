@@ -152,11 +152,11 @@ def load_A_and_xs(
 
     # Check if the files exist
     if os.path.exists(weights_path) and os.path.exists(x_matrix_path):
-        A = np.load(weights_path)['data']
-        x_matrix = np.load(x_matrix_path)['data']
+        A = np.load(weights_path, allow_pickle=True)['data']
+        x_matrix = np.load(x_matrix_path, allow_pickle=True)['data']
     else:
         A, x_matrix = generate_A_and_x(dataset)
-        np.savez_compressed(weights_path, data=A)
-        np.savez_compressed(x_matrix_path, data=x_matrix)
+        np.savez_compressed(weights_path.rstrip('.npz'), data=A)
+        np.savez_compressed(x_matrix_path.rstrip('.npz'), data=x_matrix)
     
     return A, x_matrix

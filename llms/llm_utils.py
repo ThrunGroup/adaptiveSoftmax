@@ -23,7 +23,7 @@ def load_llm_matrices(
     """
     os.makedirs(LLM_WEIGHTS_DIR, exist_ok=True)
     os.makedirs(LLM_XS_DIR, exist_ok=True)
-    path = f"{model_id}_{dataset}_{stride}.npy"
+    path = f"{model_id}_{dataset}_{stride}.npz"
     if testing:
         path = f"testing_{path}"
 
@@ -32,13 +32,12 @@ def load_llm_matrices(
 
     # Check if the files exist
     if os.path.exists(weights_path) and os.path.exists(x_matrix_path):
-        A = np.load(weights_path)
-        x_matrix = np.load(x_matrix_path)
+        A = np.load(weights_path, allow_pickle=True)['data']
+        x_matrix = np.load(x_matrix_path, allow_pickle=True)['data']
     else:
         A, x_matrix = get_llm_matrices(dataset, model_id, stride)
-        np.save(weights_path, A)
-        np.save(x_matrix_path, x_matrix)
-    
+        np.savez_compressed(weights_path.rstrip('.npz'), data=A)
+        np.savez_compressed(x_matrix_path.rstrip('.npz'), data=x_matrix) 
     return A, x_matrix
 
 

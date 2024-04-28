@@ -4,3 +4,5 @@
 *.npz filter=lfs diff=lfs merge=lfs -text
 llms/weights/** filter=lfs diff=lfs merge=lfs -text
 llms/x_matrix/** filter=lfs diff=lfs merge=lfs -text
+mnl/weights/** filter=lfs diff=lfs merge=lfs -text
+mnl/x_matrix/** filter=lfs diff=lfs merge=lfs -text
