@@ -31,21 +31,13 @@ def test_eps_gpt2_wikitext():
     assert (in_bounds)
     assert (budget < naive_budget / LLM_TEST_BUDGET_IMPROVEMENT)
 
-def test_delta_mnl_mnist():
+def test_delta_gpt2_wikitext():
     total_wrong, total_budget, naive_budget = delta_check(WIKITEXT_DATASET, load_llm_matrices, **constants)
     assert (total_wrong / NUM_EXPERIMENTS < LLM_TEST_DELTA / LLM_DELTA_SCALE)
     assert (total_budget < naive_budget / LLM_TEST_BUDGET_IMPROVEMENT)
 
-def test_eps_mnl_eurosat():
-    in_bounds, budget, naive_budget = epsilon_check(WIKITEXT_DATASET, load_llm_matrices, **constants)
-    assert (in_bounds)
-    assert (budget < naive_budget / LLM_TEST_BUDGET_IMPROVEMENT)
-
-def test_delta_mnl_eurosat():
-    total_wrong, total_budget, naive_budget = delta_check(WIKITEXT_DATASET, load_llm_matrices, **constants)
-    assert (total_wrong / NUM_EXPERIMENTS < LLM_TEST_DELTA / LLM_DELTA_SCALE)
-    assert (total_budget < naive_budget / LLM_TEST_BUDGET_IMPROVEMENT)
 
 
 if __name__ == "__main__":
     test_eps_gpt2_wikitext()
+    test_delta_gpt2_wikitext()

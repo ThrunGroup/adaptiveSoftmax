@@ -2,3 +2,5 @@
 # reference: https://github.com/github/linguist/blob/master/docs/overrides.md#generated-code
 *.ipynb linguist-generated
 *.npz filter=lfs diff=lfs merge=lfs -text
+llms/weights/** filter=lfs diff=lfs merge=lfs -text
+llms/x_matrix/** filter=lfs diff=lfs merge=lfs -text

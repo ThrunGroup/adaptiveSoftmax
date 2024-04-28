@@ -46,7 +46,7 @@ def load_tokenizer_and_model(model_id=GPT2):
 
     return tokenizer, model
 
-def get_encodings(tokenizer, dataset=WIKITEXT_DATASET):
-    if dataset == WIKITEXT_DATASET:
-        return tokenizer("\n\n".join(dataset["text"]), return_tensors="pt")
+def get_encodings(tokenizer, dataset):
+    # combining texts into single batch
+    return tokenizer("\n\n".join(dataset["text"]), return_tensors="pt")
 

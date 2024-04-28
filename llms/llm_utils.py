@@ -67,10 +67,14 @@ def get_llm_matrices(dataset, model_id, stride):
         input_ids = tokens[:, :-1].contiguous()  # target_id would be tokens[:, -1]
 
         with torch.no_grad():
-            output = model(input_ids, labels=None, return_dict=True)    # output is a class object
-            transformer_outputs = output.hidden_states[0]  # TODO: what is the dimension of this??
-            
-            # NOTE: currently only supports batch_size = 1
+            output = model(
+                input_ids, 
+                labels=None, 
+                return_dict=True,
+                output_hidden_states=True,
+            )    
+            # only need the hidden state for the last token
+            transformer_outputs = output.hidden_states[-1]  # [batch=1, seq=1023, hidden_dim=768]
             sequence_outputs = transformer_outputs.view(-1, transformer_outputs.size(-1))
             x = sequence_outputs[-1].cpu().numpy()  # TODO: should i be doing [-1]?
             Xs.append(x)
