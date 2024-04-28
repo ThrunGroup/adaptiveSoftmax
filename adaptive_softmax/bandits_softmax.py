@@ -13,7 +13,7 @@ def generate_weighted_permutation(weights: np.ndarray, gen=np.random.default_rng
   @return: The permutation, the logits, and the perturbed logits
   """
   assert np.all(weights >= 0), 'Weights must be non-negative'
-  
+
   with np.errstate(divide='ignore'):
     logits = np.log(weights) - np.log(np.sum(weights))
     perturbed_logits = logits + gen.gumbel(size=logits.size)
@@ -115,8 +115,7 @@ class BanditsSoftmax:
       if atom_importance_sampling:
         print(f'Atom weights:\n{self._atom_weights}')
       if randomized_hadamard_transform:
-        print(f"Max variance before transform: {np.max(np.var(A, axis=1))}")
-        print(f"Max variance after transform: {np.max(np.var(self._A, axis=1))}")
+        print(f'Columns 0-padded: {A.shape[1]} --> {self.d}')
   
   @property
   def it(self):
@@ -179,14 +178,10 @@ class BanditsSoftmax:
     n_nonzero = self.d - self._num_sparse_columns
     self._est_query_sig2 = np.mean(np.abs(self._xp[:n_nonzero])) ** 2 if self.query_importance_sampling else np.mean(self._xp[:n_nonzero] ** 2)
 
-    if self.verbose:
-      print(f'Query:\n{x}')
-      if self.randomized_hadamard_transform:
-        print(f'Query after Hadamard transform:\n{self._x}')
-      if self.query_importance_sampling:
-        print(f'Query weights:\n{query_weights}')
-        print(f'Combined weights:\n{self._atom_weights * query_weights}')
-        print(f'Permutation:\n{self._permutation}')
+    if self.verbose and self.query_importance_sampling:
+      print(f'Query weights:\n{query_weights}')
+      print(f'Combined weights:\n{self._atom_weights * query_weights}')
+      print(f'Updated permutation:\n{self._permutation}')
   
   def exact_values(self, arms: np.ndarray) -> np.ndarray:
     """
@@ -254,6 +249,10 @@ class BanditsSoftmax:
     assert np.unique(self._it[arms]).size <= 1, 'All arms must have been pulled the same number of times'
 
     it = int(ceil(self.fudge_pull * it))
+
+    if self.verbose:
+      print(f"Pulling arm(s):\n{arms}")
+      print(f'Using {(it / self.max_pulls) * 100:.2f}% of the budget')
 
     if arms.size == 0 or it <= self._it[0]:
       return self._estimates[arms]

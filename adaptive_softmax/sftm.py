@@ -7,7 +7,6 @@ from adaptive_softmax.bandits_softmax import BanditsSoftmax
 from adaptive_softmax.utils import fpc
 
 # TODO add constants from constants.py
-# TODO add comments and verboseness from adasoftmax
 
 class SFTM:
   """
@@ -70,6 +69,14 @@ class SFTM:
     self.multiplicative_error = multiplicative_error
     self.failure_probability = failure_probability
     self.noise_bound = noise_bound
+    self.verbose = verbose
+
+    if self.verbose:
+      print(f"Initializing SFTM for a matrix of shape ({self.n}, {self.d})...")
+      print("Parameters:")
+      print(f"\t-temperature: {self.temperature}")
+      print(f"\t-multiplicative_error: {self.multiplicative_error}")
+      print(f"\t-failure_probability: {self.failure_probability}")
 
     self.bandits = BanditsSoftmax(
       A,
@@ -82,6 +89,10 @@ class SFTM:
       verbose=verbose,
       seed=seed,
     )
+
+    if self.verbose:
+      print("SFTM initialized.")
+      print("")
 
   def softmax(self, x: np.ndarray, k: int=1) -> Tuple[np.ndarray, np.ndarray]:
     """
@@ -101,11 +112,18 @@ class SFTM:
     top-k indices, the approximate softmax for these indices, and the
     normalizing constant.
 
+    This method is based on Algorithm 1 from the paper "Adaptive Sampling for
+    Efficient Softmax Approximation."
+
     @param x: The query vector x of shape (d,).
     @param k: The number of elements to return, by default 1.
     @return: The top-k indices, the approximate softmax, and the normalizing
              constant.
     """
+
+    if self.verbose:
+      print(f"Computing adaptive softmax for query vector {x}...")
+
     self.bandits.set_query(x)
 
     bta = self.temperature
@@ -113,9 +131,17 @@ class SFTM:
     dlt = self.failure_probability
     sig2 = self.noise_bound if self.noise_bound is not None else self.bandits.variance
 
+    if self.verbose:
+      print(f"Noise bound: {sig2}")
+
     i_star_hat = self.best_arms(dlt/2, bta, sig2, k)
     mu_star_hat = self.bandits.exact_values(i_star_hat)
     log_S_hat = self.log_norm_estimation(bta, eps, dlt/2, sig2)
+
+    if self.verbose:
+      print(f"Top-{k} arms: {i_star_hat}")
+      print(f"Estimated logit values: {mu_star_hat}")
+      print(f"Estimated log normalizing constant: {log_S_hat}")
 
     return i_star_hat, np.exp(bta * mu_star_hat - log_S_hat), np.exp(log_S_hat)
   
@@ -123,8 +149,9 @@ class SFTM:
     """
     Finds the top-k arms with the highest estimated logit values.
 
-    This is a round-based PAC bandits algorithm: "Algorithm 3" from the paper 
-    "Distributed Exploration in Multi-Armed Bandits" by Hillel et al. (2013).
+    This method uses a round-based PAC bandits algorithm: Algorithm 3 from the
+    paper, "Distributed Exploration in Multi-Armed Bandits" by Hillel et al.
+    (2013).
     
     @param dlt: The failure probability parameter.
     @param bta: The temperature parameter.
@@ -132,9 +159,15 @@ class SFTM:
     @param k: The number of arms to return.
     @return: The top-k arms with the highest estimated logit values.
     """
+    if self.verbose:
+      print(f"Finding top-{k} arms with the highest estimated logit values...")
+
     n = self.n
     d = self.bandits.max_pulls
     T0 = int(ceil(min(d, 17 * (bta ** 2) * sig2 * log(6 * n / dlt))))
+
+    if self.verbose:
+      print(f"Initial number of pulls: {T0}")
 
     # initialize parameters
     confidence_set = np.arange(n)
@@ -145,12 +178,21 @@ class SFTM:
 
     while True:
 
+      if self.verbose:
+        print(f"Number of pulls: {num_pulls}")
+        print(f"FPC-adjusted number of pulls: {fpc(num_pulls, d)}")
+
       # pull arms and update confidence interval
       estimates = self.bandits.batch_pull(confidence_set, it=fpc(num_pulls, d))
       confidence_interval = sqrt(2 * sig2 * log(6 * n * log(d) / dlt) / num_pulls)
 
       # update confidence set
       keep = estimates >= np.max(estimates) - confidence_interval
+
+      if self.verbose:
+        print(f"Estimates: {estimates}")
+        print(f"Confidence interval: {confidence_interval}")
+        print(f"Confidence set: {confidence_set[keep]}")
 
       # check stopping condition
       if np.sum(keep) <= k:
@@ -177,6 +219,8 @@ class SFTM:
     @param sig2: The noise bound parameter.
     @return: The estimated logit values of the specified arms.
     """
+    if self.verbose:
+      print(f"Estimating logit values for arms {arms}...")
     d = self.bandits.max_pulls
     T = int(ceil(min(d, 32 * (sig2) * (bta ** 2) * log(2 / dlt) / (eps ** 2))))
     return self.bandits.pull(arms, its=np.array(fpc(T, d)))
@@ -186,8 +230,8 @@ class SFTM:
     Estimates the log normalizing constant of the softmax function with PAC 
     guarantees.
 
-    The process used to estimate the log normalizing constant of the softmax
-    function with PAC guarantees is based on Algorithm 2 of the SFTM paper.
+    This method is based on Algorithm 2 of the paper, "Adaptive Sampling for
+    Efficient Softmax Approximation."
 
     @param bta: The temperature parameter.
     @param eps: The multiplicative error parameter.
@@ -196,21 +240,28 @@ class SFTM:
     @return: The estimated log normalizing constant of the softmax function.
     """
 
-    # initialize params and make initial estimates (lines 1-5)    
     n = self.n
     d = self.bandits.max_pulls
 
     T0 = int(ceil(min(d, 17 * (bta ** 2) * sig2 * log(6 * n / dlt))))
     C = np.sqrt(2 * sig2 * log(6 * n / dlt) / T0)
+
+    if self.verbose:
+      print(f"Initial number of pulls: {T0}")
+      print(f"Confidence interval constant: {C}")
     
+    # initial estimates
     mu_hat = self.bandits.pull(np.arange(n), its=np.full(shape=n, fill_value=fpc(T0, d)))
+
+    if self.verbose:
+      print(f"Initial estimates: {mu_hat}")
 
     log_alpha = bta * (mu_hat - C)
     log_gamma = bta * (mu_hat - C) / 2
     log_alpha_sum = logsumexp(log_alpha)
     log_gamma_sum = logsumexp(log_gamma)
 
-    # make estimates (lines 6-7)
+    # adapt sample sizes based on initial estimates
     log_b = log(17 * (bta ** 2) * sig2 * log(6 * n / dlt))
     log_c = log(16 * sqrt(2) * sig2 * log(6 * n / dlt) / eps) + 2 * log_gamma_sum - log_alpha_sum
     log_d = log(16 * sig2 * log(12 / dlt) / (eps ** 2))
@@ -221,7 +272,15 @@ class SFTM:
     it = np.minimum(it, d)
     it = np.ceil(it).astype(int)
 
+    if self.verbose:
+      print(f"Adaptive sample sizes: {it}")
+
+    # make updated estimates 
     mu_hat = self.bandits.pull(np.arange(n), its=fpc(it, d))
+
+    if self.verbose:
+      print(f"Updated estimates: {mu_hat}")
+      print(f"Estimated log normalizing constant: {logsumexp(bta * mu_hat)}")
 
     return logsumexp(bta * mu_hat)
     
