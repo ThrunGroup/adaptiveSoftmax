@@ -149,9 +149,9 @@ class SFTM:
     """
     Finds the top-k arms with the highest estimated logit values.
 
-    This method uses a round-based PAC bandits algorithm: Algorithm 3 from the
-    paper, "Distributed Exploration in Multi-Armed Bandits" by Hillel et al.
-    (2013).
+    This method uses a round-based PAC bandits algorithm based on Algorithm 3
+    from the paper, "Distributed Exploration in Multi-Armed Bandits" by Hillel
+    et al. (2013).
     
     @param dlt: The failure probability parameter.
     @param bta: The temperature parameter.
@@ -174,13 +174,7 @@ class SFTM:
     num_pulls = T0
     estimates = np.zeros(n)
 
-    # TODO prevent infinite loop (for equl values) nicely
-
-    while True:
-
-      if self.verbose:
-        print(f"Number of pulls: {num_pulls}")
-        print(f"FPC-adjusted number of pulls: {fpc(num_pulls, d)}")
+    while fpc(num_pulls, d) < d:
 
       # pull arms and update confidence interval
       estimates = self.bandits.batch_pull(confidence_set, it=fpc(num_pulls, d))
@@ -190,6 +184,8 @@ class SFTM:
       keep = estimates >= np.max(estimates) - confidence_interval
 
       if self.verbose:
+        print(f"Number of pulls: {num_pulls}")
+        print(f"FPC-adjusted number of pulls: {fpc(num_pulls, d)}")
         print(f"Estimates: {estimates}")
         print(f"Confidence interval: {confidence_interval}")
         print(f"Confidence set: {confidence_set[keep]}")
