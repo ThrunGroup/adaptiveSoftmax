@@ -12,7 +12,8 @@ def generate_weighted_permutation(weights: np.ndarray, gen=np.random.default_rng
   @param gen: The random number generator to use
   @return: The permutation, the logits, and the perturbed logits
   """
-  assert np.all(weights >= 0)
+  assert np.all(weights >= 0), 'Weights must be non-negative'
+  
   with np.errstate(divide='ignore'):
     logits = np.log(weights) - np.log(np.sum(weights))
     perturbed_logits = logits + gen.gumbel(size=logits.size)
@@ -66,7 +67,7 @@ class BanditsSoftmax:
       verbose=False,
       seed=42):
     
-    assert len(A.shape) == 2
+    assert len(A.shape) == 2, 'A must be a 2D array'
 
     self.n = A.shape[0]
     self.d = A.shape[1]
@@ -133,7 +134,7 @@ class BanditsSoftmax:
     padding was performed for the randomized Hadamard transform or if the query
     vector is sparse and query-based importance sampling is enabled.
     """
-    assert self._x is not None
+    assert self._x is not None, 'Query vector not set'
 
     return self.d - self._num_sparse_columns
   
@@ -142,7 +143,7 @@ class BanditsSoftmax:
     """
     An upper bound of the variance of the bandit pulls.
     """
-    assert self._x is not None
+    assert self._x is not None, 'Query vector not set'
     
     return self._est_atom_sig2 * self._est_query_sig2 * (self.max_pulls ** 2) * (self.temperature ** 2) * self.fudge_sigma2
 
@@ -158,7 +159,7 @@ class BanditsSoftmax:
 
     @param x: The query vector
     """
-    assert x.size <= self.d if self.randomized_hadamard_transform else x.size == self.d
+    assert x.size <= self.d if self.randomized_hadamard_transform else x.size == self.d, 'Query vector must of of size d or less if padding was performed due to a randomized Hadamard transform'
 
     self._it = np.zeros(self.n, dtype=int)
     self._estimates = np.zeros(self.n, dtype=np.float64)
@@ -195,7 +196,7 @@ class BanditsSoftmax:
     @param arms: The arms for which to compute the exact value
     @return: The exact values of the specified arms
     """
-    assert self._x is not None
+    assert self._x is not None, 'Query vector not set'
 
     if np.any(self.it[arms] < self.max_pulls):
       A_arms = self._A[arms, self._permutation] if self._Ap is None else self._Ap[arms]
@@ -212,7 +213,7 @@ class BanditsSoftmax:
     @param it: The number of times to pull the arm
     @return: The updated estimated value of the arm
     """
-    assert self._x is not None
+    assert self._x is not None, 'Query vector not set'
     
     return self.batch_pull(np.atleast_1d(arm), it)[0]
 
@@ -225,8 +226,8 @@ class BanditsSoftmax:
     @param its: The number of times to pull each arm
     @return: The updated estimated values of the specified arms
     """
-    assert self._x is not None
-    assert arms.size == its.size
+    assert self._x is not None, 'Query vector not set'
+    assert arms.size == its.size, 'The number of arms and pulls must be the same'
 
     for i in np.nonzero(its > self._it[arms])[0]:
       self.batch_pull(np.atleast_1d(arms[i]), its[i])
@@ -249,8 +250,8 @@ class BanditsSoftmax:
     @param it: The number of times to pull all arms
     @return: The updated estimated values of the specified arms
     """
-    assert self._x is not None
-    assert np.unique(self._it[arms]).size <= 1
+    assert self._x is not None, 'Query vector not set'
+    assert np.unique(self._it[arms]).size <= 1, 'All arms must have been pulled the same number of times'
 
     it = int(ceil(self.fudge_pull * it))
 

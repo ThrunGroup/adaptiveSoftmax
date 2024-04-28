@@ -6,7 +6,6 @@ from scipy.special import logsumexp, softmax
 from adaptive_softmax.bandits_softmax import BanditsSoftmax
 from adaptive_softmax.utils import fpc
 
-# TODO add comments to assertions
 # TODO add constants from constants.py
 # TODO add comments and verboseness from adasoftmax
 
@@ -196,7 +195,7 @@ class SFTM:
     @param sig2: The noise bound parameter.
     @return: The estimated log normalizing constant of the softmax function.
     """
-    
+
     # initialize params and make initial estimates (lines 1-5)    
     n = self.n
     d = self.bandits.max_pulls
