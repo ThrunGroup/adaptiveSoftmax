@@ -65,19 +65,33 @@ def get_llm_matrices(dataset, model_id, stride):
         tokens = encodings.input_ids[:, begin:end].to(device)
         input_ids = tokens[:, :-1].contiguous()  # target_id would be tokens[:, -1]
 
+        hook = model.transformer.register_forward_hook(extract_final_hidden_state)
         with torch.no_grad():
-            output = model(
-                input_ids, 
-                labels=None, 
-                return_dict=True,
-                output_hidden_states=True,
-            )    
-            # only need the hidden state for the last token
-            transformer_outputs = output.hidden_states[-1]  # [batch=1, seq=1023, hidden_dim=768]
-            sequence_outputs = transformer_outputs.view(-1, transformer_outputs.size(-1))
-            x = sequence_outputs[-1].cpu().numpy()  # TODO: should i be doing [-1]?
+            # this populates final_hidden_state variable 
+            # NOTE: logits is unused but is left the same variable name for clarity
+            logits = model(input_ids)  
+            
+            sequence_outputs = final_hidden_state.view(-1, final_hidden_state.size(-1))
+            x = sequence_outputs[-1].cpu().numpy()  
             Xs.append(x)
-    
+        hook.remove()
+
     return A, Xs
     
 
+def extract_final_hidden_state(module, input, output):
+    """ 
+    We will hook this function to the model's forward pass to extract the hidden states. 
+    :param module: the layer that will triger the hook
+    :param input: the input tensors to the module
+    :param output: output of module
+
+    Example:
+        hook = model.<layer name>.register_forward_hook(extract_final_hidden_state)
+        final_output = model.forward(...)
+        <do something with final_hidden_state variable>
+        hook.remove()
+    """
+    global final_hidden_state
+    #hidden_states = output
+    final_hidden_state = output[0] 

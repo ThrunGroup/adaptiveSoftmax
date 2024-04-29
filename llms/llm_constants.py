@@ -12,6 +12,10 @@ GPT2 = "gpt2"
 GPT_EPS = 0.1
 GPT_DELTA_ERROR = 0.1
 
+# llama constants
+LLAMA_3_8B = "meta-llama/Meta-Llama-3-8B"
+
+
 # other
 CONTEXT_WINDOW_STRIDE = 512   
 
