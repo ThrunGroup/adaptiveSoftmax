@@ -172,7 +172,7 @@ class SFTM:
     num_pulls = T0
     estimates = np.zeros(n)
 
-    while fpc(num_pulls, d) < d:
+    while True:
 
       # pull arms and update confidence interval
       estimates = self.bandits.batch_pull(confidence_set, it=fpc(num_pulls, d))
@@ -189,7 +189,7 @@ class SFTM:
         print(f"Confidence set: {confidence_set[keep]}")
 
       # check stopping condition
-      if np.sum(keep) <= k:
+      if np.sum(keep) <= k or fpc(num_pulls, d) >= d:
         break
 
       # update parameters
@@ -241,6 +241,7 @@ class SFTM:
     C = np.sqrt(2 * sig2 * log(6 * n / dlt) / T0)
 
     if self.verbose:
+      print("Estimating log normalizing constant of the softmax function...")
       print(f"Initial number of pulls: {T0}")
       print(f"Confidence interval constant: {C}")
     
