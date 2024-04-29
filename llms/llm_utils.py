@@ -8,8 +8,10 @@ from llms.llm_constants import (
     LLM_XS_DIR,
     WIKITEXT_DATASET,
     GPT2,
+    GPT_FINAL_HIDDEN_LAYER_NAME,
     CONTEXT_WINDOW_STRIDE,
     LLAMA_3_8B,
+    LLAMA_FINAL_HIDDEN_LAYER_NAME,
 )
 
 def load_llm_matrices(
@@ -86,11 +88,15 @@ def register_hook(model, model_id):
     :return: a Callable hook
     """
     # TODO: add more models
-    layers = {
-        GPT2: model.transformer,
-        LLAMA_3_8B: model.norm
-    }
-    layer_to_hook = layers.get(model_id)
+    if model_id == GPT2:
+        layer_name = GPT_FINAL_HIDDEN_LAYER_NAME
+    elif model_id == LLAMA_3_8B:
+        layer_name = LLAMA_FINAL_HIDDEN_LAYER_NAME
+    else:
+        raise NotImplementedError("only supports gpt2 and llama for now")
+
+    # set up hook
+    layer_to_hook = getattr(model, layer_name)
     return layer_to_hook.register_forward_hook(extract_final_hidden_state)
     
 
@@ -108,5 +114,5 @@ def extract_final_hidden_state(module, input, output):
         hook.remove()
     """
     global final_hidden_state
-    # we only want the final hidden state
+    # we only want the final hidden state. TODO: is there cleaner way to do this?
     final_hidden_state = output[0] if isinstance(output, tuple) else output

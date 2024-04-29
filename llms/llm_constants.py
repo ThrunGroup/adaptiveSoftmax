@@ -11,9 +11,11 @@ LLM_TARGET_IDS_PATH = "llms/target_ids"
 GPT2 = "gpt2"
 GPT_EPS = 0.1
 GPT_DELTA_ERROR = 0.1
+GPT_FINAL_HIDDEN_LAYER_NAME = "transformer"
 
 # llama constants
 LLAMA_3_8B = "meta-llama/Meta-Llama-3-8B"
+LLAMA_FINAL_HIDDEN_LAYER_NAME = "norm"
 
 
 # other
