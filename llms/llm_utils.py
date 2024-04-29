@@ -9,6 +9,7 @@ from llms.llm_constants import (
     WIKITEXT_DATASET,
     GPT2,
     CONTEXT_WINDOW_STRIDE,
+    LLAMA_3_8B,
 )
 
 def load_llm_matrices(
@@ -65,18 +66,32 @@ def get_llm_matrices(dataset, model_id, stride):
         tokens = encodings.input_ids[:, begin:end].to(device)
         input_ids = tokens[:, :-1].contiguous()  # target_id would be tokens[:, -1]
 
-        hook = model.transformer.register_forward_hook(extract_final_hidden_state)
+        hook = register_hook(model, model_id)
         with torch.no_grad():
             # this populates final_hidden_state variable 
             # NOTE: logits is unused but is left the same variable name for clarity
             logits = model(input_ids)  
-            
+
             sequence_outputs = final_hidden_state.view(-1, final_hidden_state.size(-1))
             x = sequence_outputs[-1].cpu().numpy()  
             Xs.append(x)
         hook.remove()
 
     return A, Xs
+
+
+def register_hook(model, model_id):
+    """
+    This is just a helper function that sets up the hook with the correct linear layer
+    :return: a Callable hook
+    """
+    # TODO: add more models
+    layers = {
+        GPT2: model.transformer,
+        LLAMA_3_8B: model.norm
+    }
+    layer_to_hook = layers.get(model_id)
+    return layer_to_hook.register_forward_hook(extract_final_hidden_state)
     
 
 def extract_final_hidden_state(module, input, output):
@@ -93,5 +108,5 @@ def extract_final_hidden_state(module, input, output):
         hook.remove()
     """
     global final_hidden_state
-    #hidden_states = output
-    final_hidden_state = output[0] 
+    # we only want the final hidden state
+    final_hidden_state = output[0] if isinstance(output, tuple) else output
