@@ -162,7 +162,7 @@ class SFTM:
 
     n = self.n
     d = self.bandits.max_pulls
-    T0 = int(ceil(17 * (bta ** 2) * sig2 * log(6 * n / dlt)))
+    T0 = 16
 
     if self.verbose:
       print(f"Initial number of pulls: {T0}")
@@ -175,26 +175,28 @@ class SFTM:
     while True:
 
       # pull arms and update confidence interval
-      estimates = self.bandits.batch_pull(confidence_set, it=fpc(num_pulls, d))
+      estimates = self.bandits.batch_pull(confidence_set, it=num_pulls)
       confidence_interval = sqrt(2 * sig2 * log(6 * n * log(d) / dlt) / num_pulls)
+
+      # finite population correction
+      confidence_interval *= sqrt((d - num_pulls) / (d - 1))
 
       # update confidence set
       keep = estimates >= np.max(estimates) - confidence_interval
 
       if self.verbose:
         print(f"Number of pulls: {num_pulls}")
-        print(f"FPC-adjusted number of pulls: {fpc(num_pulls, d)}")
         print(f"Estimates: {estimates}")
         print(f"Confidence interval: {confidence_interval}")
         print(f"Confidence set: {confidence_set[keep]}")
 
       # check stopping condition
-      if np.sum(keep) <= k or fpc(num_pulls, d) >= d:
+      if np.sum(keep) <= k or num_pulls >= d:
         break
 
       # update parameters
       confidence_set = confidence_set[keep]
-      num_pulls = num_pulls * 2
+      num_pulls = min(d, num_pulls * 1.5)
 
     return confidence_set[np.argsort(estimates)[-k:]]
 
