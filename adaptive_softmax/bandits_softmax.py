@@ -18,6 +18,7 @@ def generate_weighted_permutation(weights: np.ndarray, gen=np.random.default_rng
     logits = np.log(weights) - np.log(np.sum(weights))
     perturbed_logits = logits + gen.gumbel(size=logits.size)
     permutation = perturbed_logits.argsort()[::-1]
+
   return permutation, logits, perturbed_logits
 
 class BanditsSoftmax:
@@ -65,8 +66,8 @@ class BanditsSoftmax:
       query_importance_sampling=True,
       randomized_hadamard_transform=False,
       verbose=False,
-      seed=42):
-    
+      seed=42,
+  ):
     assert len(A.shape) == 2, 'A must be a 2D array'
 
     self.n = A.shape[0]
@@ -94,7 +95,7 @@ class BanditsSoftmax:
     self._permutation, self._logits, self._perturbed_logits = generate_weighted_permutation(self._atom_weights, gen=self._gen)
     
     q = (self._atom_weights / (np.sum(self._atom_weights)) )[np.newaxis, :]
-    q[q == 0 | np.isnan(q)] = 1 # NOTE 0-weight columns will never be selected
+    q[q == 0 | np.isnan(q)] = 1  # NOTE 0-weight columns will never be selected
     self._est_atom_sig2 = np.max(np.sum((self._A / q / self.d) ** 2 * q, axis=1))
     self._est_query_sig2 = None
     self._sparse_columns = None
@@ -111,8 +112,10 @@ class BanditsSoftmax:
       print(f'Query importance sampling: {self.query_importance_sampling}')
       print(f'Randomized Hadamard transform: {self.randomized_hadamard_transform}')
       print(f'Permutation:\n{self._permutation}')
+
       if atom_importance_sampling:
         print(f'Atom weights:\n{self._atom_weights}')
+
       if randomized_hadamard_transform:
         print(f'Columns 0-padded: {A.shape[1]} --> {self.d}')
   
