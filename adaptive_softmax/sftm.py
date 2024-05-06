@@ -178,12 +178,13 @@ class SFTM:
       # # finite population correction
       # confidence_interval *= sqrt((d - num_pulls) / (d - 1))
 
-      # # update confidence set
+      # update confidence set
       best_arm_hat = np.argmax(estimates)
 
       # TODO(colins26) hacky
-      var_hat = self.bandits.var_hat
-      keep = estimates + var_hat >= estimates[best_arm_hat] - var_hat[best_arm_hat]
+      var_hat = self.bandits.var_hat * self.bandits.fudge_sigma2
+      confidence_interval = sqrt(2 * var_hat[confidence_set][best_arm_hat] * log(6 * n * log(d) / delta))
+      keep = estimates >= estimates[best_arm_hat] - confidence_interval
 
       if self.verbose:
         print(f"Number of pulls: {num_pulls}")

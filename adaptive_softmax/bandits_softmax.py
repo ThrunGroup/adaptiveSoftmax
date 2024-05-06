@@ -164,6 +164,7 @@ class BanditsSoftmax:
 
     self._it = np.zeros(self.n, dtype=int)
     self._estimates = np.zeros(self.n, dtype=np.float64)
+    self.var_hat = np.zeros(self.n, dtype=np.float64)
 
     self._x = np.pad(x, (0, self.d - x.size), 'constant', constant_values=0)
 
@@ -273,7 +274,8 @@ class BanditsSoftmax:
       self._estimates[arms] = (A @ x) * self.temperature
 
       # TODO(colins26) hacky
-      self.var_hat = np.sum((A * x[np.newaxis, :]) ** 2 * (1 - weights) / (weights ** 2), axis=1)
+      self.var_hat[arms] = np.sum((A * x[np.newaxis, :]) ** 2 * (1 - weights) / (weights ** 2), axis=1)
+      # print(self.var_hat)
 
     # no importance sampling (equal weighting)
     else:
