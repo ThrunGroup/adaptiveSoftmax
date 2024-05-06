@@ -173,18 +173,22 @@ class SFTM:
     while True:
       # pull arms and update confidence interval
       estimates = self.bandits.batch_pull(confidence_set, it=fpc(num_pulls, d))
-      confidence_interval = sqrt(2 * sig2 * log(6 * n * log(d) / delta) / num_pulls)
+      # confidence_interval = sqrt(2 * sig2 * log(6 * n * log(d) / delta) / num_pulls)
 
-      # finite population correction
-      confidence_interval *= sqrt((d - num_pulls) / (d - 1))
+      # # finite population correction
+      # confidence_interval *= sqrt((d - num_pulls) / (d - 1))
 
-      # update confidence set
-      keep = estimates >= np.max(estimates) - confidence_interval
+      # # update confidence set
+      best_arm_hat = np.argmax(estimates)
+
+      # TODO(colins26) hacky
+      var_hat = self.bandits.var_hat
+      keep = estimates + var_hat >= estimates[best_arm_hat] - var_hat[best_arm_hat]
 
       if self.verbose:
         print(f"Number of pulls: {num_pulls}")
         print(f"Estimates: {estimates}")
-        print(f"Confidence interval: {confidence_interval}")
+        print(f"Best arm confidence interval: {var_hat[best_arm_hat]}")
         print(f"Confidence set: {confidence_set[keep]}")
 
       # check stopping condition

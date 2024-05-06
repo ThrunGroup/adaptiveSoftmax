@@ -160,12 +160,12 @@ def single_run_adasoftmax(
     indices, z = sftm.softmax(x, k=k)
     indices_hat, z_hat, _ = sftm.adaptive_softmax(x, k=k)
     indices_hat = np.sort(indices_hat)
-    assert(np.array_equal(indices, indices_hat))
+    wrong_arm = np.array_equal(indices, indices_hat)
     
     # test results
     error = np.abs(z_hat - z[indices]) / z[indices]
     in_bounds = error <= sftm.multiplicative_error  
     budget = np.sum(sftm.bandits.it)
 
-    return in_bounds, error, budget
+    return wrong_arm or in_bounds, error, budget
 

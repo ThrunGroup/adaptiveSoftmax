@@ -272,6 +272,9 @@ class BanditsSoftmax:
       x = self._xp[:next_it] / weights
       self._estimates[arms] = (A @ x) * self.temperature
 
+      # TODO(colins26) hacky
+      self.var_hat = np.sum((A * x[np.newaxis, :]) ** 2 * (1 - weights) / (weights ** 2), axis=1)
+
     # no importance sampling (equal weighting)
     else:
       self._estimates[arms] *= prev_it
