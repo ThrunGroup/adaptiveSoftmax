@@ -2,9 +2,7 @@
 Include any loading functions here. 
 Examples include loading datasets, models, tokenizers, etc
 """
-import torch
 import numpy as np
-import copy
 
 from datasets import load_dataset
 from transformers import GPT2LMHeadModel, GPT2TokenizerFast, AutoModelForCausalLM, AutoTokenizer
@@ -25,11 +23,12 @@ def load_from_datasets(
     """
     test_set = None
     if dataset_name == WIKITEXT_DATASET:
+        print("loading dataset")
         test_set = load_dataset("wikitext", "wikitext-2-raw-v1", split="test")
         if num_samples is None:
             num_samples = len(test_set)
     else:
-        # TODO: add more datasets
+        # TODO: more datasets that are spiky??
         raise NotImplementedError("Only wikitext supported for now")
 
     return test_set[:num_samples]
@@ -43,6 +42,7 @@ def load_tokenizer_and_model(model_id=GPT2):
         model = GPT2LMHeadModel.from_pretrained(model_id)
 
     elif model_id == LLAMA_3_8B:
+        print("loading model")
         tokenizer = AutoTokenizer.from_pretrained(model_id)
         model = AutoModelForCausalLM.from_pretrained(model_id)
 
