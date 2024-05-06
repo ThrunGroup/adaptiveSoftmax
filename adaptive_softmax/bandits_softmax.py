@@ -125,6 +125,7 @@ class BanditsSoftmax:
     The number of pulls for each arm.
     """
     return self._it
+
   
   @property
   def max_pulls(self):
@@ -279,6 +280,7 @@ class BanditsSoftmax:
 
     # no importance sampling (equal weighting)
     else:
+      # TODO(colins26): set self.var_hat[arms] here
       self._estimates[arms] *= prev_it
       self._estimates[arms] += (self._Ap[arms, prev_it:next_it] @ self._xp[prev_it:next_it]) * (self.max_pulls * self.temperature)
       self._estimates[arms] /= next_it

@@ -1,7 +1,9 @@
 import numpy as np
+import scipy
+
 from typing import Tuple
 from math import log, ceil, sqrt
-from scipy.special import logsumexp, softmax
+
 
 from adaptive_softmax.bandits_softmax import BanditsSoftmax
 from adaptive_softmax.utils import fpc
@@ -56,7 +58,7 @@ class SFTM:
      query_importance_sampling: bool = True,
      randomized_hadamard_transform: bool = False,
      verbose: bool = False,
-     seed=42
+     seed: int = 42,
     ):
     self.A = A
     self.n = A.shape[0]
@@ -75,7 +77,7 @@ class SFTM:
       print(f"\t- failure_probability: {self.failure_probability}")
 
     self.bandits = BanditsSoftmax(
-      A,
+      A=A,
       temperature=temperature,
       fudge_pull=fudge_pull,
       fudge_sigma2=fudge_sigma2,
@@ -100,7 +102,7 @@ class SFTM:
     """
     mu = (self.A @ x) * self.temperature
     top_k = np.sort(np.argpartition(mu, -k)[-k:])
-    return top_k, softmax(mu)
+    return top_k, scipy.special.softmax(mu)
 
   def adaptive_softmax(self, x: np.ndarray, k: int = 1) -> Tuple[int, float]:
     """
@@ -131,7 +133,7 @@ class SFTM:
       print(f"Noise bound: {sig2}")
 
     i_star_hat = self.best_arms(delta/2, beta, sig2, k)
-    mu_star_hat = self.bandits.exact_values(i_star_hat)
+    mu_star_hat = self.bandits.exact_values(i_star_hat)  # Revisit this (low priority) use plug-in estimator of \hat{mu^*}
     log_S_hat = self.log_norm_estimation(beta, eps, delta/2, sig2)
 
     if self.verbose:
@@ -172,7 +174,7 @@ class SFTM:
 
     while True:
       # pull arms and update confidence interval
-      estimates = self.bandits.batch_pull(confidence_set, it=fpc(num_pulls, d))
+      estimates = self.bandits.batch_pull(confidence_set, it=num_pulls)
       # confidence_interval = sqrt(2 * sig2 * log(6 * n * log(d) / delta) / num_pulls)
 
       # # finite population correction
@@ -182,7 +184,11 @@ class SFTM:
       best_arm_hat = np.argmax(estimates)
 
       # TODO(colins26) hacky
-      var_hat = self.bandits.var_hat * self.bandits.fudge_sigma2
+      var_hat = self.bandits.var_hat * self.bandits.fudge_sigma2  # TODO(motiwari): review this after b_s
+
+      # TODO: this is not statistically correct because best_arm_hat is possibly incorrect for other var proxies
+
+      # TODO: 
       confidence_interval = sqrt(2 * var_hat[confidence_set][best_arm_hat] * log(6 * n * log(d) / delta))
       keep = estimates >= estimates[best_arm_hat] - confidence_interval
 
@@ -258,8 +264,8 @@ class SFTM:
 
     log_alpha = beta * (mu_hat - C)
     log_gamma = beta * (mu_hat - C) / 2
-    log_alpha_sum = logsumexp(log_alpha)
-    log_gamma_sum = logsumexp(log_gamma)
+    log_alpha_sum = scipy.special.logsumexp(log_alpha)
+    log_gamma_sum = scipy.special.logsumexp(log_gamma)
 
     # adapt sample sizes based on initial estimates
     log_b = log(17 * (beta ** 2) * sig2 * log(6 * n / delta))
@@ -279,7 +285,7 @@ class SFTM:
 
     if self.verbose:
       print(f"Updated estimates: {mu_hat}")
-      print(f"Estimated log normalizing constant: {logsumexp(beta * mu_hat)}")
+      print(f"Estimated log normalizing constant: {scipy.special.logsumexp(beta * mu_hat)}")
 
-    return logsumexp(beta * mu_hat)
+    return scipy.special.logsumexp(beta * mu_hat)
     
