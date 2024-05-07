@@ -188,8 +188,14 @@ class SFTM:
 
       # TODO: this is not statistically correct because best_arm_hat is possibly incorrect for other var proxies
 
-      # TODO: 
+
+      # TODO: (General): To reuse variance from best-arm in partition function computation
+
+      # TODO: Confirm this log(6) and loglog(d)
       confidence_interval = sqrt(2 * var_hat[confidence_set][best_arm_hat] * log(6 * n * log(d) / delta))
+
+
+      # TODO: replace with + confidence_interval
       keep = estimates >= estimates[best_arm_hat] - confidence_interval
 
       if self.verbose:
@@ -248,7 +254,10 @@ class SFTM:
     n = self.n
     d = self.bandits.max_pulls
 
+    # TODO: Check why b^2 is applied here but not in C
     T0 = int(ceil(17 * (beta ** 2) * sig2 * log(6 * n / delta)))
+
+    # TODO: Check this log(6)
     C = np.sqrt(2 * sig2 * log(6 * n / delta) / T0)
 
     if self.verbose:
@@ -268,6 +277,8 @@ class SFTM:
     log_gamma_sum = scipy.special.logsumexp(log_gamma)
 
     # adapt sample sizes based on initial estimates
+
+    # TODO: Check these constants
     log_b = log(17 * (beta ** 2) * sig2 * log(6 * n / delta))
     log_c = log(16 * sqrt(2) * sig2 * log(6 * n / delta) / eps) + 2 * log_gamma_sum - log_alpha_sum
     log_d = log(16 * sig2 * log(12 / delta) / (eps ** 2))
@@ -276,6 +287,7 @@ class SFTM:
     it = np.maximum(it, np.exp(log_c + log_gamma - log_gamma_sum))
     it = np.maximum(it, np.exp(log_d + log_alpha - log_alpha_sum))
     it = np.ceil(it).astype(int)
+
 
     if self.verbose:
       print(f"Adaptive sample sizes: {it}")

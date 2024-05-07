@@ -89,6 +89,8 @@ class BanditsSoftmax:
       self._A = np.pad(A, ((0, 0), (0, dp - self.d)), 'constant', constant_values=0)
       self.d = dp
       self._rademacher = self._gen.choice([-1, 1], size=self.d)
+
+      # TODO: Check nomenclature of hadamard transform
       self._A = ht(torch.tensor(self._A * self._rademacher)).numpy()
 
     self._atom_weights = np.sum(np.abs(self._A), axis=0) if atom_importance_sampling else np.ones(self.d)
@@ -98,7 +100,8 @@ class BanditsSoftmax:
     q[q == 0 | np.isnan(q)] = 1  # NOTE 0-weight columns will never be selected
     self._est_atom_sig2 = np.max(np.sum((self._A / q / self.d) ** 2 * q, axis=1))
     self._est_query_sig2 = None
-    self._sparse_columns = None
+    # TODO: Change to _num_sparse_columns
+    self._num_sparse_columns = None
 
     self._Ap = None if self.query_importance_sampling else self._A[:, self._permutation].copy()
     self._xp = None
@@ -146,7 +149,8 @@ class BanditsSoftmax:
     An upper bound of the variance of the bandit pulls.
     """
     assert self._x is not None, 'Query vector not set'
-    
+
+    # TODO: Check if this temperature is applied consistnetly to T0 and C
     return self._est_atom_sig2 * self._est_query_sig2 * (self.max_pulls ** 2) * (self.temperature ** 2) * self.fudge_sigma2
 
   def set_query(self, x: np.ndarray):
@@ -170,6 +174,7 @@ class BanditsSoftmax:
     self._x = np.pad(x, (0, self.d - x.size), 'constant', constant_values=0)
 
     if self.randomized_hadamard_transform:
+      # TODO: Check nomenclature of hadamard transform
       self._x = ht(torch.tensor(self._x * self._rademacher)).numpy()
 
     if self.query_importance_sampling:
@@ -258,7 +263,7 @@ class BanditsSoftmax:
       print(f"Pulling arm(s):\n{arms}")
       print(f'Using {(it / self.max_pulls) * 100:.2f}% of the budget')
 
-    if arms.size == 0 or it <= self._it[0]:
+    if arms.size == 0 or it <= self._it[arms[0]]:
       return self._estimates[arms]
     
     prev_it = self._it[arms][0]
@@ -282,6 +287,7 @@ class BanditsSoftmax:
     else:
       # TODO(colins26): set self.var_hat[arms] here
       self._estimates[arms] *= prev_it
+      # TODO: Make sure temperature is used correctly
       self._estimates[arms] += (self._Ap[arms, prev_it:next_it] @ self._xp[prev_it:next_it]) * (self.max_pulls * self.temperature)
       self._estimates[arms] /= next_it
 
