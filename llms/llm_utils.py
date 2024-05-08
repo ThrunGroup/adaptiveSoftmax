@@ -55,6 +55,8 @@ def get_llm_matrices(dataset, model_id, stride):
     dataset = load_from_datasets(dataset)
     tokenizer, model = load_tokenizer_and_model(model_id)
     model = model.to(device)
+
+    # TODO: change per model
     A = model.lm_head.weight.data.cpu().numpy()  # stays the same per stride
     
     # setting the context sizes
