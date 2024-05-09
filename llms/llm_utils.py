@@ -34,10 +34,12 @@ def load_llm_matrices(
     x_matrix_path = f'{LLM_XS_DIR}/{path}'
 
     # Check if the files exist
-    if os.path.exists(weights_path) and os.path.exists(x_matrix_path):
+    # if os.path.exists(weights_path) and os.path.exists(x_matrix_path):
+    if 0 == 1:
         A = np.load(weights_path, allow_pickle=False)['data']
         x_matrix = np.load(x_matrix_path, allow_pickle=False)['data']
     else:
+        print("creating new")
         A, x_matrix = get_llm_matrices(dataset, model_id, stride)
         np.savez_compressed(weights_path.rstrip('.npz'), data=A)
         np.savez_compressed(x_matrix_path.rstrip('.npz'), data=x_matrix) 
@@ -55,9 +57,7 @@ def get_llm_matrices(dataset, model_id, stride):
     dataset = load_from_datasets(dataset)
     tokenizer, model = load_tokenizer_and_model(model_id)
     model = model.to(device)
-
-    # TODO: change per model
-    A = model.lm_head.weight.data.cpu().numpy()  # stays the same per stride
+    A = extract_A(model, model_id)
     
     # setting the context sizes
     encodings = get_encodings(tokenizer, dataset)
@@ -84,6 +84,19 @@ def get_llm_matrices(dataset, model_id, stride):
     return A, Xs
 
 
+def extract_A(model, model_id):
+    """
+    Function to extract the A matrix from the LLMs. 
+    Returns as a numpy array assigned to cpu 
+    """
+    if model_id == GPT2:
+        A = model.lm_head.weight
+    elif model_id == LLAMA_3_8B:
+        A = model.lm_head.weight
+
+    # TODO: use cupy to use GPU on numpy?
+    return A.cpu().numpy()
+
 def register_hook(model, model_id):
     """
     This is just a helper function that sets up the hook with the correct linear layer
@@ -104,8 +117,9 @@ def register_hook(model, model_id):
 
 def extract_final_hidden_state(module, input, output):
     """ 
-    We will hook this function to the model's forward pass to extract the hidden states. 
-    :param module: the layer that will triger the hook
+    We will hook this function to the model's forward pass to extract the hidden states.
+    The final hidden states correspond to the xs 
+    :param module: the layer that will trigger the hook
     :param input: the input tensors to the module
     :param output: output of module
 
