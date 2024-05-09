@@ -5,12 +5,23 @@ Examples include loading datasets, models, tokenizers, etc
 import numpy as np
 
 from datasets import load_dataset
-from transformers import GPT2LMHeadModel, GPT2TokenizerFast, AutoModelForCausalLM, AutoTokenizer
+from transformers import (
+    GPT2LMHeadModel, 
+    GPT2TokenizerFast,
+    AutoTokenizer,
+    PreTrainedTokenizerFast,
+    LlamaForCausalLM,
+    MistralForCausalLM,
+    GemmaForCausalLM,
+ ) 
+
 
 from llms.llm_constants import (
     WIKITEXT_DATASET,
     GPT2,
     LLAMA_3_8B,
+    MISTRAL_7B,
+    GEMMA_7B,
 )
 
 
@@ -42,9 +53,16 @@ def load_tokenizer_and_model(model_id=GPT2):
         model = GPT2LMHeadModel.from_pretrained(model_id)
 
     elif model_id == LLAMA_3_8B:
-        print("loading model")
+        tokenizer = PreTrainedTokenizerFast.from_pretrained(model_id)
+        model = LlamaForCausalLM.from_pretrained(model_id)
+
+    elif model_id == MISTRAL_7B:
+        tokenizer = AutoTokenizer.from_pretrained(model_id)  # TODO: which one does mistral use?
+        model = MistralForCausalLM.from_pretrained(model_id)
+
+    elif model_id == GEMMA_7B:
         tokenizer = AutoTokenizer.from_pretrained(model_id)
-        model = AutoModelForCausalLM.from_pretrained(model_id)
+        model = GemmaForCausalLM.from_pretrained(model_id)
 
     else:
         raise NotImplementedError("Only GPT2 and Llama supported for now")

@@ -1,6 +1,7 @@
 import os
 import torch
 import numpy as np
+from tqdm import tqdm
 
 from llms.loading import load_tokenizer_and_model, load_from_datasets, get_encodings
 from llms.llm_constants import (
@@ -8,10 +9,12 @@ from llms.llm_constants import (
     LLM_XS_DIR,
     WIKITEXT_DATASET,
     GPT2,
-    GPT_FINAL_HIDDEN_LAYER_NAME,
-    CONTEXT_WINDOW_STRIDE,
     LLAMA_3_8B,
-    LLAMA_FINAL_HIDDEN_LAYER_NAME,
+    MISTRAL_7B,
+    GEMMA_7B,
+
+    MAX_LENGTH,
+    CONTEXT_WINDOW_STRIDE,
 )
 
 def load_llm_matrices(
@@ -26,7 +29,8 @@ def load_llm_matrices(
     """
     os.makedirs(LLM_WEIGHTS_DIR, exist_ok=True)
     os.makedirs(LLM_XS_DIR, exist_ok=True)
-    path = f"{model_id}_{dataset}_{stride}.npz"
+    path = f"{model_id}_{dataset}_{stride}.npz".replace('/', '_')
+
     if testing:
         path = f"testing_{path}"
 
@@ -34,15 +38,15 @@ def load_llm_matrices(
     x_matrix_path = f'{LLM_XS_DIR}/{path}'
 
     # Check if the files exist
-    # if os.path.exists(weights_path) and os.path.exists(x_matrix_path):
-    if 0 == 1:
+    if os.path.exists(weights_path) and os.path.exists(x_matrix_path):
         A = np.load(weights_path, allow_pickle=False)['data']
         x_matrix = np.load(x_matrix_path, allow_pickle=False)['data']
     else:
         print("creating new")
         A, x_matrix = get_llm_matrices(dataset, model_id, stride)
-        np.savez_compressed(weights_path.rstrip('.npz'), data=A)
-        np.savez_compressed(x_matrix_path.rstrip('.npz'), data=x_matrix) 
+
+        np.savez_compressed(weights_path[:-4], data=A)
+        np.savez_compressed(x_matrix_path[:-4], data=x_matrix) 
     return A, x_matrix
 
 
@@ -61,11 +65,11 @@ def get_llm_matrices(dataset, model_id, stride):
     
     # setting the context sizes
     encodings = get_encodings(tokenizer, dataset)
-    max_length = model.config.n_positions
+    max_length = get_max_length(model, model_id)
     seq_len = encodings.input_ids.size(1)  
 
     Xs = []
-    for begin in (range(0, seq_len, stride)):
+    for begin in tqdm(range(0, seq_len, stride)):
         end = min(begin + max_length, seq_len)
         tokens = encodings.input_ids[:, begin:end].to(device)
         input_ids = tokens[:, :-1].contiguous()  # target_id would be tokens[:, -1]
@@ -84,6 +88,15 @@ def get_llm_matrices(dataset, model_id, stride):
     return A, Xs
 
 
+def get_max_length(model, model_id):
+    if model_id == GPT2:
+        max_length = model.config.n_positions
+    elif model_id in [LLAMA_3_8B, MISTRAL_7B, GEMMA_7B]:
+        max_length = model.config.max_position_embeddings // 2
+
+    return min(max_length, MAX_LENGTH)
+
+
 def extract_A(model, model_id):
     """
     Function to extract the A matrix from the LLMs. 
@@ -93,9 +106,8 @@ def extract_A(model, model_id):
         A = model.lm_head.weight
     elif model_id == LLAMA_3_8B:
         A = model.lm_head.weight
+    return A.detach().cpu().numpy()
 
-    # TODO: use cupy to use GPU on numpy?
-    return A.cpu().numpy()
 
 def register_hook(model, model_id):
     """
@@ -104,14 +116,16 @@ def register_hook(model, model_id):
     """
     # TODO: add more models
     if model_id == GPT2:
-        layer_name = GPT_FINAL_HIDDEN_LAYER_NAME
-    elif model_id == LLAMA_3_8B:
-        layer_name = LLAMA_FINAL_HIDDEN_LAYER_NAME
+        layer_to_hook = model.transformer 
+
+    elif model_id == [LLAMA_3_8B, MISTRAL_7B, GEMMA_7B]:
+        layer_to_hook = model.model.norm # hidden outputs get normalized (dims are the same)
+
     else:
+        # TODO: add more models
         raise NotImplementedError("only supports gpt2 and llama for now")
 
     # set up hook
-    layer_to_hook = getattr(model, layer_name)
     return layer_to_hook.register_forward_hook(extract_final_hidden_state)
     
 
