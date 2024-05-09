@@ -1,6 +1,7 @@
 # dataset
 WIKITEXT_DATASET = "wikitext"
 WIKITEXT_BETA = 1.0
+PENN_TREEBANK_DATASET = "penn_treebank"
 
 # paths
 LLM_WEIGHTS_DIR = "llms/weights"

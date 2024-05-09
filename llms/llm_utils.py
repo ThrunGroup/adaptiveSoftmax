@@ -104,7 +104,7 @@ def extract_A(model, model_id):
     """
     if model_id == GPT2:
         A = model.lm_head.weight
-    elif model_id == LLAMA_3_8B:
+    elif model_id in [LLAMA_3_8B, MISTRAL_7B, GEMMA_7B]:
         A = model.lm_head.weight
     return A.detach().cpu().numpy()
 
@@ -118,7 +118,7 @@ def register_hook(model, model_id):
     if model_id == GPT2:
         layer_to_hook = model.transformer 
 
-    elif model_id == [LLAMA_3_8B, MISTRAL_7B, GEMMA_7B]:
+    elif model_id in [LLAMA_3_8B, MISTRAL_7B, GEMMA_7B]:
         layer_to_hook = model.model.norm # hidden outputs get normalized (dims are the same)
 
     else:

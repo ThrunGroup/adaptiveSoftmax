@@ -18,6 +18,7 @@ from transformers import (
 
 from llms.llm_constants import (
     WIKITEXT_DATASET,
+    PENN_TREEBANK_DATASET,
     GPT2,
     LLAMA_3_8B,
     MISTRAL_7B,
@@ -34,15 +35,19 @@ def load_from_datasets(
     """
     test_set = None
     if dataset_name == WIKITEXT_DATASET:
-        print("loading dataset")
         test_set = load_dataset("wikitext", "wikitext-2-raw-v1", split="test")
-        if num_samples is None:
-            num_samples = len(test_set)
+
+    elif dataset_name == PENN_TREEBANK_DATASET:
+        test_set = load_dataset("ptb_text_only", split="test")
+
     else:
         # TODO: more datasets that are spiky??
         raise NotImplementedError("Only wikitext supported for now")
 
+    if num_samples is None or num_samples > len(test_set):
+            num_samples = len(test_set)
     return test_set[:num_samples]
+
 
 def load_tokenizer_and_model(model_id=GPT2):
     """
