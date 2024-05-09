@@ -50,7 +50,7 @@ def load_llm_matrices(
     return A, x_matrix
 
 
-def get_llm_matrices(dataset, model_id, stride):
+def get_llm_matrices(datase_name, model_id, stride):
     """
     Run the forward function and retrieve the A and xs.
     """
@@ -58,13 +58,13 @@ def get_llm_matrices(dataset, model_id, stride):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"device is {device}")
 
-    dataset = load_from_datasets(dataset)
+    dataset = load_from_datasets(datase_name)
     tokenizer, model = load_tokenizer_and_model(model_id)
     model = model.to(device)
     A = extract_A(model, model_id)
     
     # setting the context sizes
-    encodings = get_encodings(tokenizer, dataset)
+    encodings = get_encodings(tokenizer, dataset, datase_name)
     max_length = get_max_length(model, model_id)
     seq_len = encodings.input_ids.size(1)  
 

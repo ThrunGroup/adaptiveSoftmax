@@ -74,7 +74,14 @@ def load_tokenizer_and_model(model_id=GPT2):
 
     return tokenizer, model
 
-def get_encodings(tokenizer, dataset):
+def get_encodings(tokenizer, dataset, dataset_name):
     # combining texts into single batch
-    return tokenizer("\n\n".join(dataset["text"]), return_tensors="pt")
+    if dataset_name == WIKITEXT_DATASET:
+        key = "text"
+    elif dataset_name == PENN_TREEBANK_DATASET:
+        key = "sentence"
+    else:
+        raise NotImplemented("only wikitext and penn treebank supported")
+
+    return tokenizer("\n\n".join(dataset[key]), return_tensors="pt")
 

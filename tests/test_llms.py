@@ -57,10 +57,21 @@ def test_delta(dataset, setup_llm_constants):
     assert total_wrong / NUM_EXPERIMENTS < LLM_TEST_DELTA / LLM_DELTA_SCALE
     assert total_budget < naive_budget / LLM_TEST_BUDGET_IMPROVEMENT
 
+# Only for debugging
+def test_eps(dataset, model_id):
+    llm_constants['model'] = model_id
+    in_bounds, budget, naive_budget = epsilon_check(
+        dataset, 
+        load_llm_matrices, 
+        **llm_constants
+    )
+    assert in_bounds
+    assert budget < naive_budget / LLM_TEST_BUDGET_IMPROVEMENT
+
 
 if __name__ == "__main__":
     # for dataset in [WIKITEXT_DATASET]:
     #     for model_id in [GPT2, LLAMA_3_8B, MISTRAL_7B, GEMMA_7B]:
     #         test_eps(dataset, model_id)
     #         test_delta(dataset, model_id)
-    test_eps(WIKITEXT_DATASET, GEMMA_7B)
+    test_eps(PENN_TREEBANK_DATASET, GPT2)
