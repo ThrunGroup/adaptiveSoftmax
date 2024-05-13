@@ -146,7 +146,7 @@ class SFTM:
     V0 = 1 / (17 * log(6 * self.n / delta))
     self.bandits.pull_to_var(np.arange(self.n), V0, batched=True)
 
-    i_star_hat = self.best_arms(delta/2, sig2, k)
+    i_star_hat = self.best_arms(delta/2, k)
     mu_star_hat = self.bandits.exact_values(i_star_hat)
     log_S_hat = self.log_norm_estimation(eps, delta/2)
 
@@ -157,7 +157,7 @@ class SFTM:
 
     return i_star_hat, np.exp(mu_star_hat - log_S_hat), np.exp(log_S_hat)
 
-  def best_arms(self, delta: float, sig2: float, k: int, ci_decay: float = DEFAULT_CI_DECAY) -> np.ndarray:
+  def best_arms(self, delta: float, k: int, ci_decay: float = DEFAULT_CI_DECAY) -> np.ndarray:
     """
     Finds the top-k arms with the highest estimated logit values.
 
@@ -242,7 +242,6 @@ class SFTM:
     """
 
     n = self.n
-    d = self.bandits.max_pulls
 
     V0 = 1 / (17 * log(6 * n / delta))
     C = np.sqrt(2 * log(6 * n / delta) * V0)
