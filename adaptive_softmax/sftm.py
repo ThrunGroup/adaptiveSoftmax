@@ -5,6 +5,20 @@ from scipy.special import logsumexp, softmax
 
 from adaptive_softmax.bandits_softmax import BanditsSoftmax
 from adaptive_softmax.utils import fpc
+from adaptive_softmax.constants import DEFAULT_CI_DECAY
+
+# TODO hyperparameter tuning
+# - messes with stat. significance
+# - potentially slow
+# - binary search best idea so far
+# - do we want to tune pull_to_var constants and bandit ci_interval as well? 
+
+# TODO separate fudge factor for bandits vs. log norm estimation
+# - is this necessary?
+
+# TODO add mechanism to track number of pulls for each stage
+
+# TODO push to main
 
 class SFTM:
   """
@@ -122,7 +136,6 @@ class SFTM:
 
     self.bandits.set_query(x)
 
-    beta = self.temperature
     eps = self.multiplicative_error
     delta = self.failure_probability
     sig2 = self.noise_bound if self.noise_bound is not None else self.bandits.variance
@@ -130,18 +143,21 @@ class SFTM:
     if self.verbose:
       print(f"Noise bound: {sig2}")
 
-    i_star_hat = self.best_arms(delta/2, beta, sig2, k)
+    V0 = 1 / (17 * log(6 * self.n / delta))
+    self.bandits.pull_to_var(np.arange(self.n), V0, batched=True)
+
+    i_star_hat = self.best_arms(delta/2, sig2, k)
     mu_star_hat = self.bandits.exact_values(i_star_hat)
-    log_S_hat = self.log_norm_estimation(beta, eps, delta/2, sig2)
+    log_S_hat = self.log_norm_estimation(eps, delta/2)
 
     if self.verbose:
       print(f"Top-{k} arms: {i_star_hat}")
       print(f"Estimated logit values: {mu_star_hat}")
       print(f"Estimated log normalizing constant: {log_S_hat}")
 
-    return i_star_hat, np.exp(beta * mu_star_hat - log_S_hat), np.exp(log_S_hat)
+    return i_star_hat, np.exp(mu_star_hat - log_S_hat), np.exp(log_S_hat)
 
-  def best_arms(self, delta: float, beta: float, sig2: float, k: int) -> np.ndarray:
+  def best_arms(self, delta: float, sig2: float, k: int, ci_decay: float = DEFAULT_CI_DECAY) -> np.ndarray:
     """
     Finds the top-k arms with the highest estimated logit values.
 
@@ -150,9 +166,10 @@ class SFTM:
     et al. (2013).
 
     @param delta: The failure probability parameter.
-    @param beta: The temperature parameter.
     @param sig2: The noise bound parameter.
     @param k: The number of arms to return.
+    @param ci_decay: The per-round decay factor for the confidence interval
+      (default 0.5).
     @return: The top-k arms with the highest estimated logit values.
     """
     if self.verbose:
@@ -160,49 +177,36 @@ class SFTM:
 
     n = self.n
     d = self.bandits.max_pulls
-    T0 = 16
-    # T0 = int(ceil(17 * (beta ** 2) * sig2 * log(6 * n / delta)))
-
-    if self.verbose:
-      print(f"Initial number of pulls: {T0}")
+    v = 1 / (17 * log(6 * self.n / delta))
 
     # initialize parameters
     confidence_set = np.arange(n)
-    num_pulls = T0
 
     while True:
       # pull arms and update confidence interval
-      estimates = self.bandits.batch_pull(confidence_set, it=fpc(num_pulls, d))
-      # confidence_interval = sqrt(2 * sig2 * log(6 * n * log(d) / delta) / num_pulls)
-
-      # # finite population correction
-      # confidence_interval *= sqrt((d - num_pulls) / (d - 1))
+      estimates, variances = self.bandits.pull_to_var(confidence_set, v)
+      confidence_intervals = np.sqrt(2 * variances * log(6 * n * log(d) / delta))
 
       # update confidence set
       best_arm_hat = np.argmax(estimates)
-
-      # TODO(colins26) hacky
-      var_hat = self.bandits.var_hat * self.bandits.fudge_sigma2
-      confidence_interval = sqrt(2 * var_hat[confidence_set][best_arm_hat] * log(6 * n * log(d) / delta))
-      keep = estimates >= estimates[best_arm_hat] - confidence_interval
+      keep = estimates + confidence_intervals >= estimates[best_arm_hat] - confidence_intervals[best_arm_hat]
 
       if self.verbose:
-        print(f"Number of pulls: {num_pulls}")
+        print(f"Confidence intervals: {confidence_intervals}")
         print(f"Estimates: {estimates}")
-        print(f"Best arm confidence interval: {var_hat[best_arm_hat]}")
         print(f"Confidence set: {confidence_set[keep]}")
 
       # check stopping condition
-      if np.sum(keep) <= k or num_pulls >= d:
+      if np.sum(keep) <= k:
         break
 
       # update parameters
       confidence_set = confidence_set[keep]
-      num_pulls = min(d, num_pulls * 1.5)
+      v *= ci_decay
 
     return confidence_set[np.argsort(estimates)[-k:]]
 
-  def estimate_arm_logits(self, arms: np.ndarray, beta: float, eps: float, delta: float, sig2: float) -> np.ndarray:
+  def estimate_arm_logits(self, arms: np.ndarray, eps: float, delta: float, sig2: float) -> np.ndarray:
     """
     Estimates the logit values of the specified arms with PAC guarantees.
 
@@ -211,7 +215,6 @@ class SFTM:
     paper.
 
     @param arms: The indices of the arms to estimate.
-    @param beta: The temperature parameter.
     @param eps: The multiplicative error parameter.
     @param delta: The failure probability parameter.
     @param sig2: The noise bound parameter.
@@ -221,10 +224,10 @@ class SFTM:
       print(f"Estimating logit values for arms {arms}...")
 
     d = self.bandits.max_pulls
-    T = int(ceil(32 * sig2 * (beta ** 2) * log(2 / delta) / (eps ** 2)))
+    T = int(ceil(32 * sig2 * log(2 / delta) / (eps ** 2)))
     return self.bandits.pull(arms, its=np.array(fpc(T, d)))
 
-  def log_norm_estimation(self, beta: float, eps: float, delta: float, sig2: float) -> float:
+  def log_norm_estimation(self, eps: float, delta: float) -> float:
     """
     Estimates the log normalizing constant of the softmax function with PAC
     guarantees.
@@ -232,7 +235,6 @@ class SFTM:
     This method is based on Algorithm 2 of the paper, "Adaptive Sampling for
     Efficient Softmax Approximation."
 
-    @param beta: The temperature parameter.
     @param eps: The multiplicative error parameter.
     @param delta: The failure probability parameter.
     @param sig2: The noise bound parameter.
@@ -242,44 +244,42 @@ class SFTM:
     n = self.n
     d = self.bandits.max_pulls
 
-    T0 = int(ceil(17 * (beta ** 2) * sig2 * log(6 * n / delta)))
-    C = np.sqrt(2 * sig2 * log(6 * n / delta) / T0)
+    V0 = 1 / (17 * log(6 * n / delta))
+    C = np.sqrt(2 * log(6 * n / delta) * V0)
 
     if self.verbose:
       print("Estimating log normalizing constant of the softmax function...")
-      print(f"Initial number of pulls: {T0}")
+      print(f"Initial sample mean to sample variance ratio: {V0}")
       print(f"Confidence interval constant: {C}")
 
-    # initial estimates
-    mu_hat = self.bandits.pull(np.arange(n), its=np.full(shape=n, fill_value=fpc(T0, d)))
+    # initial estimates (should have already been done)
+    mu_hat = self.bandits.pull_to_var(np.arange(n), V0)
 
     if self.verbose:
       print(f"Initial estimates: {mu_hat}")
 
-    log_alpha = beta * (mu_hat - C)
-    log_gamma = beta * (mu_hat - C) / 2
+    log_alpha = (mu_hat - C)
+    log_gamma = (mu_hat - C) / 2
     log_alpha_sum = logsumexp(log_alpha)
     log_gamma_sum = logsumexp(log_gamma)
 
     # adapt sample sizes based on initial estimates
-    log_b = log(17 * (beta ** 2) * sig2 * log(6 * n / delta))
-    log_c = log(16 * sqrt(2) * sig2 * log(6 * n / delta) / eps) + 2 * log_gamma_sum - log_alpha_sum
-    log_d = log(16 * sig2 * log(12 / delta) / (eps ** 2))
+    log_c = log(16 * sqrt(2) * log(6 * n / delta) / eps) + 2 * log_gamma_sum - log_alpha_sum
+    log_d = log(16 * log(12 / delta) / (eps ** 2))
 
-    it = np.exp(log_b)
-    it = np.maximum(it, np.exp(log_c + log_gamma - log_gamma_sum))
-    it = np.maximum(it, np.exp(log_d + log_alpha - log_alpha_sum))
-    it = np.ceil(it).astype(int)
+    V1 = np.full(n, V0)
+    V1 = np.minimum(V1, np.exp(log_gamma_sum - (log_c + log_gamma)))
+    V1 = np.minimum(V1, np.exp(log_alpha_sum - (log_d + log_alpha)))
 
     if self.verbose:
-      print(f"Adaptive sample sizes: {it}")
+      print(f"Adaptive variance ratio thresholds: {V1}")
 
     # make updated estimates
-    mu_hat = self.bandits.pull(np.arange(n), its=fpc(it, d))
+    mu_hat = self.bandits.pull_to_var(np.arange(n), V1)
 
     if self.verbose:
       print(f"Updated estimates: {mu_hat}")
-      print(f"Estimated log normalizing constant: {logsumexp(beta * mu_hat)}")
+      print(f"Estimated log normalizing constant: {logsumexp(mu_hat)}")
 
-    return logsumexp(beta * mu_hat)
+    return logsumexp(mu_hat)
     

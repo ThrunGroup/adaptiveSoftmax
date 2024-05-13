@@ -2,6 +2,8 @@ import numpy as np
 import torch
 from hadamard_transform import hadamard_transform as ht
 from math import ceil
+from typing import Union, Tuple
+from adaptive_softmax.constants import DEFAULT_VAR_PULL_INIT, DEFAULT_VAR_PULL_INCR
 
 def generate_weighted_permutation(weights: np.ndarray, gen=np.random.default_rng(0)):
   """
@@ -105,6 +107,7 @@ class BanditsSoftmax:
 
     self._it = np.zeros(self.n, dtype=int)
     self._estimates = np.zeros(self.n, dtype=np.float64)
+    self._var = np.full(self.n, np.inf, dtype=np.float64)
 
     if self.verbose:
       print(f'BanditsSoftmax initialized with {self.n} arms and {self.d} dimensions')
@@ -146,7 +149,7 @@ class BanditsSoftmax:
     """
     assert self._x is not None, 'Query vector not set'
     
-    return self._est_atom_sig2 * self._est_query_sig2 * (self.max_pulls ** 2) * (self.temperature ** 2) * self.fudge_sigma2
+    return self._est_atom_sig2 * self._est_query_sig2 * (self.max_pulls ** 2) * (self.temperature ** 2)
 
   def set_query(self, x: np.ndarray):
     """
@@ -164,7 +167,7 @@ class BanditsSoftmax:
 
     self._it = np.zeros(self.n, dtype=int)
     self._estimates = np.zeros(self.n, dtype=np.float64)
-    self.var_hat = np.zeros(self.n, dtype=np.float64)
+    self._var = np.full(self.n, np.inf, dtype=np.float64)
 
     self._x = np.pad(x, (0, self.d - x.size), 'constant', constant_values=0)
 
@@ -200,6 +203,7 @@ class BanditsSoftmax:
       A_arms = self._A[arms, self._permutation] if self._Ap is None else self._Ap[arms]
       self._estimates[arms] = (A_arms @ self._xp) * self.temperature
       self._it[arms] = self.max_pulls
+      self._var[arms] = 0
     
     return self._estimates[arms]
   
@@ -231,6 +235,45 @@ class BanditsSoftmax:
       self.batch_pull(np.atleast_1d(arms[i]), its[i])
     
     return self._estimates[arms]
+  
+  def pull_to_var(
+      self,
+      arms: np.ndarray,
+      frac_var: Union[float, np.ndarray],
+      init_pulls: int = DEFAULT_VAR_PULL_INIT,
+      pull_mult: float = DEFAULT_VAR_PULL_INCR,
+      batched: bool = False) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Pull the specified arms until the estimated variance of the mean is below
+    the provided threshold.
+
+    @param arms: The arms to pull
+    @param frac_var: The provided variance ratio threshold(s)
+    @param init_pulls: The initial number of pulls for each arm, by default 16
+    @param pull_mult: The factor by which to increase the number of pulls, by
+      default 2.0
+    @param batched: The flag to enable batched pulls, should only be enabled if 
+      all arms have been pulled the same number of times, by default False
+    @return: The updated estimated values of the specified arms and the variance
+      of the mean
+    """
+    assert self._x is not None, 'Query vector not set'
+
+    threshold_var = self.variance * frac_var
+    to_pull = self._var[arms] > threshold_var
+    num_pulls = init_pulls
+
+    while np.any(to_pull):
+      num_pulls_rounded = int(ceil(num_pulls))
+      pulling = arms[np.nonzero(to_pull)[0]]
+      if batched:
+        self.batch_pull(pulling, num_pulls_rounded)
+      else:
+        self.pull(pulling, np.full(pulling.size, num_pulls_rounded))
+      to_pull &= self._var[arms] > threshold_var
+      num_pulls = min(self.max_pulls, num_pulls * pull_mult)
+
+    return self._estimates[arms], self._var[arms]
 
   def batch_pull(self, arms: np.ndarray, it: int) -> np.ndarray:
     """
@@ -257,7 +300,7 @@ class BanditsSoftmax:
       print(f"Pulling arm(s):\n{arms}")
       print(f'Using {(it / self.max_pulls) * 100:.2f}% of the budget')
 
-    if arms.size == 0 or it <= self._it[0]:
+    if arms.size == 0 or it <= self._it[arms][0]:
       return self._estimates[arms]
     
     prev_it = self._it[arms][0]
@@ -272,16 +315,19 @@ class BanditsSoftmax:
       A = (self._A[np.ix_(arms, self._permutation[:next_it])] if self._Ap is None else self._Ap[arms, :next_it]).reshape((len(arms), next_it))
       x = self._xp[:next_it] / weights
       self._estimates[arms] = (A @ x) * self.temperature
-
-      # TODO(colins26) hacky
-      self.var_hat[arms] = np.sum((A * x[np.newaxis, :]) ** 2 * (1 - weights) / (weights ** 2), axis=1)
-      # print(self.var_hat)
+      self._var[arms] = np.sum((A * self._xp[:next_it] * self.temperature) ** 2 * (1 - weights) / (weights ** 2), axis=1)
 
     # no importance sampling (equal weighting)
     else:
       self._estimates[arms] *= prev_it
       self._estimates[arms] += (self._Ap[arms, prev_it:next_it] @ self._xp[prev_it:next_it]) * (self.max_pulls * self.temperature)
       self._estimates[arms] /= next_it
+      self._var[arms] = self.variance / next_it
 
+    if next_it == self.max_pulls:
+      self._var[arms] = 0
+
+    self._var[arms] *= self.fudge_sigma2
     self._it[arms] = next_it
+
     return self._estimates[arms]
