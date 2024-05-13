@@ -75,17 +75,18 @@ class BanditsSoftmax:
 
     self._A = A
     self._x = None
-    self._gen = np.random.default_rng(seed)
+    
+    gen = np.random.default_rng(seed)
 
     if randomized_hadamard_transform:
       dp = 2 ** int(np.ceil(np.log2(self.d)))
       self._A = np.pad(A, ((0, 0), (0, dp - self.d)), 'constant', constant_values=0)
       self.d = dp
-      self._rademacher = self._gen.choice([-1, 1], size=self.d)
+      self._rademacher = gen.choice([-1, 1], size=self.d)
       self._A = ht(torch.tensor(self._A * self._rademacher)).numpy()
 
     self._atom_weights = np.sum(np.abs(self._A), axis=0) if atom_importance_sampling else np.ones(self.d)
-    self._permutation, self._logits, self._perturbed_logits = generate_weighted_permutation(self._atom_weights, gen=self._gen)
+    self._permutation, self._logits, self._perturbed_logits = generate_weighted_permutation(self._atom_weights, gen=gen)
     
     q = (self._atom_weights / (np.sum(self._atom_weights)) )[np.newaxis, :]
     q[q == 0 | np.isnan(q)] = 1  # NOTE 0-weight columns will never be selected
@@ -142,7 +143,7 @@ class BanditsSoftmax:
     
     return self._est_atom_sig2 * self._est_query_sig2 * (self.max_pulls ** 2) * (self.temperature ** 2)
 
-  def set_query(self, x: np.ndarray):
+  def set_query(self, x: np.ndarray, seed=42):
     """
     Set the query vector for the bandit problem.
 
@@ -156,6 +157,8 @@ class BanditsSoftmax:
     """
     assert x.size <= self.d if self.randomized_hadamard_transform else x.size == self.d, 'Query vector must of of size d or less if padding was performed due to a randomized Hadamard transform'
 
+    gen = np.random.default_rng(seed)
+
     self._it = np.zeros(self.n, dtype=int)
     self._estimates = np.zeros(self.n, dtype=np.float64)
     self._var = np.full(self.n, np.inf, dtype=np.float64)
@@ -167,7 +170,7 @@ class BanditsSoftmax:
 
     if self.query_importance_sampling:
       query_weights = np.abs(self._x)
-      self._permutation, self._logits, self._perturbed_logits = generate_weighted_permutation(query_weights * self._atom_weights, gen=self._gen)
+      self._permutation, self._logits, self._perturbed_logits = generate_weighted_permutation(query_weights * self._atom_weights, gen=gen)
     
     self._xp = self._x[self._permutation].copy()
 
@@ -268,7 +271,7 @@ class BanditsSoftmax:
       to_pull &= self._var[arms] > threshold_var
       num_pulls = min(self.max_pulls, num_pulls * pull_mult)
 
-    return self._estimates[arms], self._var[arms]
+    return self._estimates[arms], self._var[arms] * fudge_factor_var
 
   def batch_pull(self, arms: np.ndarray, it: int) -> np.ndarray:
     """
