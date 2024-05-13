@@ -16,4 +16,8 @@ log.txt
 *.png
 softmax/
 mnl/data
+mnl/x_matrix
+mnl/weights
+llms/x_matrix
+llms/weights
 venv/
