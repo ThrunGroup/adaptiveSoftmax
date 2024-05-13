@@ -13,10 +13,9 @@ from adaptive_softmax.constants import DEFAULT_CI_DECAY
 # - binary search best idea so far
 # - do we want to tune pull_to_var constants and bandit ci_interval as well? 
 
-# TODO separate fudge factor for bandits vs. log norm estimation
-# - is this necessary?
-
 # TODO add mechanism to track number of pulls for each stage
+
+# TODO add runner for provided A and x with all necessary info
 
 # TODO push to main
 
@@ -39,12 +38,12 @@ class SFTM:
     The failure probability parameter for the PAC guarantee, delta (default 1e-1).
   noise_bound : float, optional
     The noise bound parameter for entries of the matrix-vector multiplication (default None).
-  fudge_pull : float, optional
-    The multiplier for the number of pulls used in the bandits algorithm to 
+  fudge_bandits : float, optional
+    The multiplier for the variance estimate used in the bandits algorithm to 
     account for loose bounds (default 1.0).
-  fudge_sigma2 : float, optional
-    The multiplier for the variance used in the bandits algorithm to account
-    for loose bounds (default 1.0).
+  fudge_log_norm : float, optional
+    The multiplier for the variance estimate used in the log norm algorithm to 
+    account for loose bounds (default 1.0).
   atom_importance_sampling : bool, optional
     The flag to enable atom-based importance sampling in the bandits algorithm (default True).
   query_importance_sampling : bool, optional
@@ -64,8 +63,8 @@ class SFTM:
      multiplicative_error: float = 3e-1,
      failure_probability: float = 1e-1,
      noise_bound: float = None,
-     fudge_pull: float = 1.0,
-     fudge_sigma2: float = 1.0,
+     fudge_bandits: float = 1.0,
+     fudge_log_norm: float = 1.0,
      atom_importance_sampling: bool = True,
      query_importance_sampling: bool = True,
      randomized_hadamard_transform: bool = False,
@@ -79,6 +78,8 @@ class SFTM:
     self.multiplicative_error = multiplicative_error
     self.failure_probability = failure_probability
     self.noise_bound = noise_bound
+    self.fudge_bandits = fudge_bandits
+    self.fudge_log_norm = fudge_log_norm
     self.verbose = verbose
 
     if self.verbose:
@@ -91,8 +92,6 @@ class SFTM:
     self.bandits = BanditsSoftmax(
       A,
       temperature=temperature,
-      fudge_pull=fudge_pull,
-      fudge_sigma2=fudge_sigma2,
       atom_importance_sampling=atom_importance_sampling,
       query_importance_sampling=query_importance_sampling,
       randomized_hadamard_transform=randomized_hadamard_transform,
@@ -144,7 +143,10 @@ class SFTM:
       print(f"Noise bound: {sig2}")
 
     V0 = 1 / (17 * log(6 * self.n / delta))
-    self.bandits.pull_to_var(np.arange(self.n), V0, batched=True)
+    fudge_factor = max(self.fudge_bandits, self.fudge_log_norm)
+
+    self.bandits.pull_to_var(
+      np.arange(self.n), V0, fudge_factor_var=fudge_factor, batched=True)
 
     i_star_hat = self.best_arms(delta/2, k)
     mu_star_hat = self.bandits.exact_values(i_star_hat)
@@ -184,7 +186,7 @@ class SFTM:
 
     while True:
       # pull arms and update confidence interval
-      estimates, variances = self.bandits.pull_to_var(confidence_set, v)
+      estimates, variances = self.bandits.pull_to_var(confidence_set, v, fudge_factor_var=self.fudge_bandits)
       confidence_intervals = np.sqrt(2 * variances * log(6 * n * log(d) / delta))
 
       # update confidence set
@@ -252,7 +254,7 @@ class SFTM:
       print(f"Confidence interval constant: {C}")
 
     # initial estimates (should have already been done)
-    mu_hat = self.bandits.pull_to_var(np.arange(n), V0)
+    mu_hat, _ = self.bandits.pull_to_var(np.arange(n), V0, fudge_factor_var=self.fudge_log_norm)
 
     if self.verbose:
       print(f"Initial estimates: {mu_hat}")
@@ -274,7 +276,7 @@ class SFTM:
       print(f"Adaptive variance ratio thresholds: {V1}")
 
     # make updated estimates
-    mu_hat = self.bandits.pull_to_var(np.arange(n), V1)
+    mu_hat, _ = self.bandits.pull_to_var(np.arange(n), V1, fudge_factor_var=self.fudge_log_norm)
 
     if self.verbose:
       print(f"Updated estimates: {mu_hat}")

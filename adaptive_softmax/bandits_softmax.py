@@ -36,34 +36,27 @@ class BanditsSoftmax:
   Parameters
   ----------
   A : np.ndarray
-    The atom matrix A of shape (n, d) for the matrix-vector multiplication.
+    The atom matrix A of shape (n, d) for the matrix-vector multiplication
   temperature : float, optional
-    The temperature of the softmax, by default 1.0
-  fudge_pull : float, optional
-    The fudge factor for the number of pulls, by default 1.0
-  fudge_sigma2 : float, optional
-    The fudge factor for the estimate of variance, by default 1.0
+    The temperature of the softmax (default 1.0)
   atom_importance_sampling : bool, optional
-    The flag to enable atom-based importance sampling in the bandits algorithm,
-    by default True.
+    The flag to enable atom-based importance sampling in the bandits algorithm
+      (default True)
   query_importance_sampling : bool, optional
-    The flag to enable query-based importance sampling in the bandits algorithm,
-    by default True.
+    The flag to enable query-based importance sampling in the bandits algorithm
+      (default True)
   randomized_hadamard_transform : bool, optional
-    The flag to enable randomized Hadamard transform of the atoms, by default
-    False.
+    The flag to enable randomized Hadamard transform of the atoms (default False)
   verbose : bool, optional
-    The flag to enable verbose output, by default False.
+    The flag to enable verbose output (default False)
   seed : int, optional
-    The seed for the random number generator, by default 42.
+    The seed for the random number generator (default 42)
   """
 
   def __init__(
       self,
       A: np.ndarray,
       temperature: float = 1.0,
-      fudge_pull: float = 1.0,
-      fudge_sigma2: float = 1.0,
       atom_importance_sampling=True,
       query_importance_sampling=True,
       randomized_hadamard_transform=False,
@@ -75,8 +68,6 @@ class BanditsSoftmax:
     self.n = A.shape[0]
     self.d = A.shape[1]
     self.temperature = temperature
-    self.fudge_pull = fudge_pull
-    self.fudge_sigma2 = fudge_sigma2
     self.atom_importance_sampling = atom_importance_sampling
     self.query_importance_sampling = query_importance_sampling
     self.randomized_hadamard_transform = randomized_hadamard_transform
@@ -242,6 +233,7 @@ class BanditsSoftmax:
       frac_var: Union[float, np.ndarray],
       init_pulls: int = DEFAULT_VAR_PULL_INIT,
       pull_mult: float = DEFAULT_VAR_PULL_INCR,
+      fudge_factor_var: float = 1.0,
       batched: bool = False) -> Tuple[np.ndarray, np.ndarray]:
     """
     Pull the specified arms until the estimated variance of the mean is below
@@ -249,17 +241,20 @@ class BanditsSoftmax:
 
     @param arms: The arms to pull
     @param frac_var: The provided variance ratio threshold(s)
-    @param init_pulls: The initial number of pulls for each arm, by default 16
-    @param pull_mult: The factor by which to increase the number of pulls, by
-      default 2.0
+    @param init_pulls: The initial number of pulls for each arm (default 16)
+    @param pull_mult: The factor by which to increase the number of pulls
+      (default 2.0)
+    @param fudge_factor_var: The fudge factor for the variance of the mean
+      (default 1.0)
     @param batched: The flag to enable batched pulls, should only be enabled if 
-      all arms have been pulled the same number of times, by default False
+      all arms have been pulled the same number of times (default False)
+
     @return: The updated estimated values of the specified arms and the variance
       of the mean
     """
     assert self._x is not None, 'Query vector not set'
 
-    threshold_var = self.variance * frac_var
+    threshold_var = self.variance * frac_var / fudge_factor_var
     to_pull = self._var[arms] > threshold_var
     num_pulls = init_pulls
 
@@ -294,8 +289,6 @@ class BanditsSoftmax:
     assert self._x is not None, 'Query vector not set'
     assert np.unique(self._it[arms]).size <= 1, 'All arms must have been pulled the same number of times'
 
-    it = int(ceil(self.fudge_pull * it))
-
     if self.verbose:
       print(f"Pulling arm(s):\n{arms}")
       print(f'Using {(it / self.max_pulls) * 100:.2f}% of the budget')
@@ -327,7 +320,6 @@ class BanditsSoftmax:
     if next_it == self.max_pulls:
       self._var[arms] = 0
 
-    self._var[arms] *= self.fudge_sigma2
     self._it[arms] = next_it
 
     return self._estimates[arms]
