@@ -138,8 +138,11 @@ class SFTM:
     def f_check_log_norm(fudge_factor: float, x: np.ndarray, _: np.ndarray, log_norm: float) -> bool:
       self.bandits.set_query(x)
       log_norm_hat = self.log_norm_estimation(eps, delta / 2, fudge_factor=fudge_factor)
-      return np.abs((log_norm_hat - log_norm) / log_norm) <= eps
-    
+      mi = np.min([log_norm_hat, log_norm])
+      ma = np.max([log_norm_hat, log_norm])
+      err = (np.exp(ma - mi) - 1) / np.exp(log_norm - mi)
+      return err <= eps
+
     if self.verbose:
       print("Fitting bandits fudge factor...")
 
@@ -149,6 +152,7 @@ class SFTM:
       print("Fitting log norm fudge factor...")
 
     fudge_log_norm = bin_search(f_check_log_norm)
+
 
     if self.verbose:
       print("Fitting complete.")

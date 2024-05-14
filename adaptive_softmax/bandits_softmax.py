@@ -233,7 +233,7 @@ class BanditsSoftmax:
   def pull_to_var(
       self,
       arms: np.ndarray,
-      frac_var: Union[float, np.ndarray],
+      var_threshold: Union[float, np.ndarray],
       init_pulls: int = DEFAULT_VAR_PULL_INIT,
       pull_mult: float = DEFAULT_VAR_PULL_INCR,
       fudge_factor_var: float = 1.0,
@@ -243,7 +243,7 @@ class BanditsSoftmax:
     the provided threshold.
 
     @param arms: The arms to pull
-    @param frac_var: The provided variance ratio threshold(s)
+    @param var_threshold: The variance threshold(s)
     @param init_pulls: The initial number of pulls for each arm (default 16)
     @param pull_mult: The factor by which to increase the number of pulls
       (default 2.0)
@@ -257,7 +257,7 @@ class BanditsSoftmax:
     """
     assert self._x is not None, 'Query vector not set'
 
-    threshold_var = self.variance * frac_var / fudge_factor_var
+    threshold_var = var_threshold / fudge_factor_var
     to_pull = self._var[arms] > threshold_var
     num_pulls = init_pulls
 
