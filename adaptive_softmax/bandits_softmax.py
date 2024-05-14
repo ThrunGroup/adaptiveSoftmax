@@ -263,10 +263,10 @@ class BanditsSoftmax:
 
     while np.any(to_pull):
       num_pulls_rounded = int(ceil(num_pulls))
-      pulling = arms[np.nonzero(to_pull)[0]]
       if batched:
-        self.batch_pull(pulling, num_pulls_rounded)
+        self.batch_pull(arms, num_pulls_rounded)
       else:
+        pulling = arms[np.nonzero(to_pull)[0]]
         self.pull(pulling, np.full(pulling.size, num_pulls_rounded))
       to_pull &= self._var[arms] > threshold_var
       num_pulls = min(self.max_pulls, num_pulls * pull_mult)

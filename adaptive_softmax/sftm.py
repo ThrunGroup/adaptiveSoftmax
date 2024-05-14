@@ -6,7 +6,7 @@ from typing import Callable, Any
 
 from adaptive_softmax.bandits_softmax import BanditsSoftmax
 from adaptive_softmax.utils import fpc
-from adaptive_softmax.constants import DEFAULT_CI_DECAY, TUNE_EXP_FUDGE_HIGH, TUNE_EXP_FUDGE_LOW
+from adaptive_softmax.constants import DEFAULT_CI_DECAY, TUNE_EXP_FUDGE_HIGH, TUNE_EXP_FUDGE_LOW, DEFAULT_CI_INIT
 
 class SFTM:
   """
@@ -105,7 +105,7 @@ class SFTM:
 
     # binary search for fudge factors
     def bin_search(f_check: Callable[[float, np.ndarray, np.ndarray, float], bool]) -> float:
-      target_success_rate = 1 - delta  /2
+      target_success_rate = 1 - delta / 2
       lo = TUNE_EXP_FUDGE_LOW
       hi = TUNE_EXP_FUDGE_HIGH
       while lo + 1e-2 < hi:
@@ -128,21 +128,35 @@ class SFTM:
         else:
           hi = mi
 
-      return 10 ** hi
+      return 10 ** ((lo + hi) / 2)
     
     def f_check_bandits(fudge_factor: float, x: np.ndarray, best_arms: np.ndarray, _: float) -> bool:
       self.bandits.set_query(x)
       best_arms_hat = self.best_arms(delta / 2, k, fudge_factor=fudge_factor)
       return np.all(best_arms_hat == best_arms)
     
-    def f_check_log_norm(fudge_factor: float, x: np.ndarray, _: np.ndarray, log_norm: float) -> bool:
+    def f_check_log_norm(fudge_factor: float, x: np.ndarray, best_arm: np.ndarray, log_norm: float) -> bool:
+      n = self.n
       self.bandits.set_query(x)
-      log_norm_hat = self.log_norm_estimation(eps, delta / 2, fudge_factor=fudge_factor)
-      mi = np.min([log_norm_hat, log_norm])
-      ma = np.max([log_norm_hat, log_norm])
-      err = (np.exp(ma - mi) - 1) / np.exp(log_norm - mi)
-      return err <= eps
 
+      # batched warmup
+      V0 = 1 / (17 * log(6 * n / delta))
+      self.bandits.pull_to_var(np.arange(n), V0, fudge_factor_var=fudge_factor, batched=True)
+
+      log_norm_hat = self.log_norm_estimation(eps, delta / 2, fudge_factor=fudge_factor)
+      
+      # NOTE we don't actually care about log norm, just that best arm prob is close
+
+      # mi = np.min([log_norm_hat, log_norm])
+      # ma = np.max([log_norm_hat, log_norm])
+      # err = (np.exp(ma - mi) - 1) / np.exp(log_norm - mi)
+
+      p_hat = np.exp(self.bandits._estimates[best_arm] - log_norm_hat)
+      p = np.exp((self.A @ x)[best_arm] - log_norm)
+      err = np.abs((p_hat - p) / p)
+
+      return err <= eps
+    
     if self.verbose:
       print("Fitting bandits fudge factor...")
 
@@ -152,7 +166,6 @@ class SFTM:
       print("Fitting log norm fudge factor...")
 
     fudge_log_norm = bin_search(f_check_log_norm)
-
 
     if self.verbose:
       print("Fitting complete.")
@@ -178,7 +191,7 @@ class SFTM:
       k: int = 1,
       fudge_bandits: float = 1.0,
       fudge_log_norm: float = 1.0,
-    ) -> Tuple[int, float]:
+    ) -> Tuple[int, float, float]:
     """
     Computes the approximate softmax using the SFTM algorithm, returning the
     top-k indices, the approximate softmax for these indices, and the
@@ -209,11 +222,9 @@ class SFTM:
     if self.verbose:
       print(f"Noise bound: {sig2}")
 
+    # batched warmup
     V0 = 1 / (17 * log(6 * self.n / delta))
-    fudge_factor = max(fudge_bandits, fudge_log_norm)
-
-    self.bandits.pull_to_var(
-      np.arange(self.n), V0, fudge_factor_var=fudge_factor, batched=True)
+    self.bandits.pull_to_var(np.arange(self.n), V0, fudge_factor_var=fudge_log_norm, batched=True)
 
     i_star_hat = self.best_arms(delta/2, k, fudge_factor=fudge_bandits)
     mu_star_hat = self.bandits.exact_values(i_star_hat)
@@ -254,14 +265,14 @@ class SFTM:
 
     n = self.n
     d = self.bandits.max_pulls
-    v = 1 / (17 * log(6 * self.n / delta))
+    v = DEFAULT_CI_INIT * self.bandits.variance
 
     # initialize parameters
     confidence_set = np.arange(n)
 
     while True:
       # pull arms and update confidence interval
-      estimates, variances = self.bandits.pull_to_var(confidence_set, v, fudge_factor_var=fudge_factor)
+      estimates, variances = self.bandits.pull_to_var(confidence_set, v, fudge_factor_var=fudge_factor, batched=True)
       confidence_intervals = np.sqrt(2 * variances * log(6 * n * log(d) / delta))
 
       # update confidence set
@@ -331,7 +342,7 @@ class SFTM:
 
     if self.verbose:
       print("Estimating log normalizing constant of the softmax function...")
-      print(f"Initial sample mean to sample variance ratio: {V0}")
+      print(f"Initial sample mean threshold: {V0}")
       print(f"Confidence interval constant: {C}")
 
     # initial estimates (should have already been done)
