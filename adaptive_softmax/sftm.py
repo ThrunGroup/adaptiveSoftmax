@@ -33,6 +33,8 @@ class SFTM:
     The flag to enable query-based importance sampling in the bandits algorithm (default True).
   randomized_hadamard_transform : bool, optional
     The flag to enable randomized Hadamard transform of the atom matrix A (default False)
+  exact_pull_best_arm : bool, optional
+    The flag to enable exact computation of the best arms (default True).
   verbose : bool, optional
     The flag to enable verbose output (default False).
   seed : int, optional
@@ -49,6 +51,7 @@ class SFTM:
      atom_importance_sampling: bool = True,
      query_importance_sampling: bool = True,
      randomized_hadamard_transform: bool = False,
+     exact_pull_best_arm: bool = True,
      verbose: bool = False,
      seed=42
     ):
@@ -59,6 +62,7 @@ class SFTM:
     self.multiplicative_error = multiplicative_error
     self.failure_probability = failure_probability
     self.noise_bound = noise_bound
+    self.exact_pull_best_arm = exact_pull_best_arm
     self.verbose = verbose
     self.seed = seed
 
@@ -104,8 +108,8 @@ class SFTM:
     eps = self.multiplicative_error
 
     # binary search for fudge factors
-    def bin_search(f_check: Callable[[float, np.ndarray, np.ndarray, float], bool]) -> float:
-      target_success_rate = 1 - delta / 2
+    def bin_search(f_check: Callable[[float, float, np.ndarray, np.ndarray, float], bool], fudge_bandits=None, fudge_log_norm=None) -> float:
+      target_success_rate = 1 - delta
       lo = TUNE_EXP_FUDGE_LOW
       hi = TUNE_EXP_FUDGE_HIGH
       while lo + 1e-2 < hi:
@@ -117,7 +121,9 @@ class SFTM:
 
         count_correct = 0
         for i, x in enumerate(X_train):
-          count_correct += f_check(fudge_factor, x, TOP_K[i], LOG_NORM[i])
+          fudge_b = fudge_factor if fudge_bandits is None else fudge_bandits
+          fudge_ln = fudge_factor if fudge_log_norm is None else fudge_log_norm
+          count_correct += f_check(fudge_b, fudge_ln, x, TOP_K[i], LOG_NORM[i])
         success_rate = count_correct / X_train.shape[0]
 
         if self.verbose:
@@ -130,30 +136,28 @@ class SFTM:
 
       return 10 ** ((lo + hi) / 2)
     
-    def f_check_bandits(fudge_factor: float, x: np.ndarray, best_arms: np.ndarray, _: float) -> bool:
+    def f_check_bandits(fudge_bandits: float, _fudge_log_norm: float, x: np.ndarray, best_arms: np.ndarray, _log_norm: float) -> bool:
       self.bandits.set_query(x)
-      best_arms_hat = self.best_arms(delta / 2, k, fudge_factor=fudge_factor)
+      best_arms_hat = self.best_arms(delta / 2, k, fudge_factor=fudge_bandits)
       return np.all(best_arms_hat == best_arms)
     
-    def f_check_log_norm(fudge_factor: float, x: np.ndarray, best_arm: np.ndarray, log_norm: float) -> bool:
+    def f_check_log_norm(fudge_bandits: float, fudge_log_norm: float, x: np.ndarray, best_arms: np.ndarray, log_norm: float) -> bool:
       n = self.n
       self.bandits.set_query(x)
 
-      # batched warmup
+      # batched warmup + best arms
       V0 = 1 / (17 * log(6 * n / delta))
-      self.bandits.pull_to_var(np.arange(n), V0, fudge_factor_var=fudge_factor, batched=True)
+      self.bandits.pull_to_var(np.arange(n), V0, fudge_factor_var=fudge_log_norm, batched=True)
+      best_arms_hat = self.best_arms(delta / 2, k, fudge_factor=fudge_bandits)
 
-      log_norm_hat = self.log_norm_estimation(eps, delta / 2, fudge_factor=fudge_factor)
-      
-      # NOTE we don't actually care about log norm, just that best arm prob is close
+      if np.any(best_arms_hat != best_arms):
+        return False
 
-      # mi = np.min([log_norm_hat, log_norm])
-      # ma = np.max([log_norm_hat, log_norm])
-      # err = (np.exp(ma - mi) - 1) / np.exp(log_norm - mi)
+      log_norm_hat = self.log_norm_estimation(eps, delta / 2, fudge_factor=fudge_log_norm)
 
-      p_hat = np.exp(self.bandits._estimates[best_arm] - log_norm_hat)
-      p = np.exp((self.A @ x)[best_arm] - log_norm)
-      err = np.abs((p_hat - p) / p)
+      p_hat = np.exp(self.bandits._estimates[best_arms] - log_norm_hat)
+      p = np.exp((self.A @ x)[best_arms] - log_norm)
+      err = np.max(np.abs((p_hat - p) / p))
 
       return err <= eps
     
@@ -165,7 +169,7 @@ class SFTM:
     if self.verbose:
       print("Fitting log norm fudge factor...")
 
-    fudge_log_norm = bin_search(f_check_log_norm)
+    fudge_log_norm = bin_search(f_check_log_norm, fudge_bandits=fudge_bandits)
 
     if self.verbose:
       print("Fitting complete.")
@@ -226,9 +230,16 @@ class SFTM:
     V0 = 1 / (17 * log(6 * self.n / delta))
     self.bandits.pull_to_var(np.arange(self.n), V0, fudge_factor_var=fudge_log_norm, batched=True)
 
-    i_star_hat = self.best_arms(delta/2, k, fudge_factor=fudge_bandits)
-    mu_star_hat = self.bandits.exact_values(i_star_hat)
-    log_S_hat = self.log_norm_estimation(eps, delta/2, fudge_factor=fudge_log_norm)
+    # TODO allow option to remove exact computation
+
+    if self.exact_pull_best_arm:
+      i_star_hat = self.best_arms(delta / 2, k, fudge_factor=fudge_bandits)
+      mu_star_hat = self.bandits.exact_values(i_star_hat)
+      log_S_hat = self.log_norm_estimation(eps, delta / 2, fudge_factor=fudge_log_norm)
+    else:
+      i_star_hat = self.best_arms(delta / 3, k, fudge_factor=fudge_bandits)
+      mu_star_hat = self.estimate_arm_logits(i_star_hat, eps / 4, delta / 3, sig2)
+      log_S_hat = self.log_norm_estimation(eps / 4, delta / 3, fudge_factor=fudge_log_norm)
 
     if self.verbose:
       print(f"Top-{k} arms: {i_star_hat}")
@@ -311,9 +322,8 @@ class SFTM:
     if self.verbose:
       print(f"Estimating logit values for arms {arms}...")
 
-    d = self.bandits.max_pulls
-    T = int(ceil(32 * sig2 * log(2 / delta) / (eps ** 2)))
-    return self.bandits.pull(arms, its=np.array(fpc(T, d)))
+    V = 1 / (32 * log(2 / delta) / (eps ** 2))
+    return self.bandits.pull_to_var(arms, V)
 
   def log_norm_estimation(
       self,
