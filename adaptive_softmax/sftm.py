@@ -52,6 +52,7 @@ class SFTM:
      query_importance_sampling: bool = True,
      randomized_hadamard_transform: bool = False,
      exact_pull_best_arm: bool = True,
+     max_init_pull_budget: float = 1.0,
      verbose: bool = False,
      seed=42
     ):
@@ -63,6 +64,7 @@ class SFTM:
     self.failure_probability = failure_probability
     self.noise_bound = noise_bound
     self.exact_pull_best_arm = exact_pull_best_arm
+    self.max_init_pull_budget = max_init_pull_budget
     self.verbose = verbose
     self.seed = seed
 
@@ -228,9 +230,12 @@ class SFTM:
 
     # batched warmup
     V0 = 1 / (17 * log(6 * self.n / delta))
-    self.bandits.pull_to_var(np.arange(self.n), V0, fudge_factor_var=fudge_log_norm, batched=True)
-
-    # TODO allow option to remove exact computation
+    self.bandits.pull_to_var(
+      np.arange(self.n),
+      V0,
+      fudge_factor_var=fudge_log_norm,
+      max_budget=int(self.max_init_pull_budget * self.bandits.max_pulls),
+      batched=True)
 
     if self.exact_pull_best_arm:
       i_star_hat = self.best_arms(delta / 2, k, fudge_factor=fudge_bandits)
@@ -356,7 +361,11 @@ class SFTM:
       print(f"Confidence interval constant: {C}")
 
     # initial estimates (should have already been done)
-    mu_hat, _ = self.bandits.pull_to_var(np.arange(n), V0, fudge_factor_var=fudge_factor)
+    mu_hat, _ = self.bandits.pull_to_var(
+      np.arange(n),
+      V0,
+      fudge_factor_var=fudge_factor,
+      max_pulls=int(self.max_init_pull_budget * self.bandits.max_pulls))
 
     if self.verbose:
       print(f"Initial estimates: {mu_hat}")

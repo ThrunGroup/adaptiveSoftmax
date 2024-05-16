@@ -237,6 +237,7 @@ class BanditsSoftmax:
       init_pulls: int = DEFAULT_VAR_PULL_INIT,
       pull_mult: float = DEFAULT_VAR_PULL_INCR,
       fudge_factor_var: float = 1.0,
+      max_pulls: int = np.inf,
       batched: bool = False) -> Tuple[np.ndarray, np.ndarray]:
     """
     Pull the specified arms until the estimated variance of the mean is below
@@ -257,9 +258,10 @@ class BanditsSoftmax:
     """
     assert self._x is not None, 'Query vector not set'
 
+    max_pulls = min(max_pulls, self.max_pulls)
     threshold_var = var_threshold / fudge_factor_var
-    to_pull = self._var[arms] > threshold_var
-    num_pulls = init_pulls
+    to_pull = (self._var[arms] > threshold_var) & (self._it[arms] < self.max_pulls)
+    num_pulls = min(init_pulls, max_pulls)
 
     while np.any(to_pull):
       num_pulls_rounded = int(ceil(num_pulls))
@@ -268,8 +270,8 @@ class BanditsSoftmax:
       else:
         pulling = arms[np.nonzero(to_pull)[0]]
         self.pull(pulling, np.full(pulling.size, num_pulls_rounded))
-      to_pull &= self._var[arms] > threshold_var
-      num_pulls = min(self.max_pulls, num_pulls * pull_mult)
+      to_pull &= (self._var[arms] > threshold_var) & (self._it[arms] < self.max_pulls)
+      num_pulls = min(max_pulls, num_pulls * pull_mult)
 
     return self._estimates[arms], self._var[arms] * fudge_factor_var
 
