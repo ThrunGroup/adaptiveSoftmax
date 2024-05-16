@@ -57,6 +57,7 @@ class BanditsSoftmax:
       self,
       A: np.ndarray,
       temperature: float = 1.0,
+      noise_bound: float = None,
       atom_importance_sampling=True,
       query_importance_sampling=True,
       randomized_hadamard_transform=False,
@@ -68,6 +69,7 @@ class BanditsSoftmax:
     self.n = A.shape[0]
     self.d = A.shape[1]
     self.temperature = temperature
+    self.noise_bound = noise_bound
     self.atom_importance_sampling = atom_importance_sampling
     self.query_importance_sampling = query_importance_sampling
     self.randomized_hadamard_transform = randomized_hadamard_transform
@@ -141,7 +143,8 @@ class BanditsSoftmax:
     """
     assert self._x is not None, 'Query vector not set'
     
-    return self._est_atom_sig2 * self._est_query_sig2 * (self.max_pulls ** 2) * (self.temperature ** 2)
+    return self.noise_bound if self.noise_bound is not None \
+      else self._est_atom_sig2 * self._est_query_sig2 * (self.max_pulls ** 2) * (self.temperature ** 2)
 
   def set_query(self, x: np.ndarray, seed=42):
     """
@@ -260,7 +263,7 @@ class BanditsSoftmax:
 
     max_pulls = min(max_pulls, self.max_pulls)
     threshold_var = var_threshold / fudge_factor_var
-    to_pull = (self._var[arms] > threshold_var) & (self._it[arms] < self.max_pulls)
+    to_pull = (self._var[arms] > threshold_var) & (self._it[arms] < max_pulls)
     num_pulls = min(init_pulls, max_pulls)
 
     while np.any(to_pull):
@@ -270,7 +273,7 @@ class BanditsSoftmax:
       else:
         pulling = arms[np.nonzero(to_pull)[0]]
         self.pull(pulling, np.full(pulling.size, num_pulls_rounded))
-      to_pull &= (self._var[arms] > threshold_var) & (self._it[arms] < self.max_pulls)
+      to_pull &= (self._var[arms] > threshold_var) & (self._it[arms] < max_pulls)
       num_pulls = min(max_pulls, num_pulls * pull_mult)
 
     return self._estimates[arms], self._var[arms] * fudge_factor_var

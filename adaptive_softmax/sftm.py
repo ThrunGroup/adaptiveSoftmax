@@ -62,7 +62,6 @@ class SFTM:
     self.temperature = temperature
     self.multiplicative_error = multiplicative_error
     self.failure_probability = failure_probability
-    self.noise_bound = noise_bound
     self.exact_pull_best_arm = exact_pull_best_arm
     self.max_init_pull_budget = max_init_pull_budget
     self.verbose = verbose
@@ -78,6 +77,7 @@ class SFTM:
     self.bandits = BanditsSoftmax(
       A,
       temperature=temperature,
+      noise_bound=noise_bound,
       atom_importance_sampling=atom_importance_sampling,
       query_importance_sampling=query_importance_sampling,
       randomized_hadamard_transform=randomized_hadamard_transform,
@@ -89,7 +89,7 @@ class SFTM:
       print("SFTM initialized.")
       print("")
   
-  def tune_fudge_factors(self, X_train: np.ndarray, k: int=1) -> Tuple[float, float]:
+  def tune_fudge_factors(self, X_train: np.ndarray, k: int=1, verbose=False) -> Tuple[float, float]:
     """
     Fits the fudge factors of SFTM based on the provided queries.
 
@@ -98,7 +98,7 @@ class SFTM:
     @return: The fudge factors for the bandits and log norm estimation.
     """
     
-    if self.verbose:
+    if verbose:
       print(f"Fitting SFTM fudge factors for {X_train.shape[0]} query vectors...")
 
     # get true best arms and log norm for each query
@@ -118,7 +118,7 @@ class SFTM:
         mi = (lo + hi) / 2
         fudge_factor = 10 ** mi
 
-        if self.verbose:
+        if verbose:
           print(f"\tTrying fudge factor: {fudge_factor}")
 
         count_correct = 0
@@ -128,7 +128,7 @@ class SFTM:
           count_correct += f_check(fudge_b, fudge_ln, x, TOP_K[i], LOG_NORM[i])
         success_rate = count_correct / X_train.shape[0]
 
-        if self.verbose:
+        if verbose:
           print(f"\tSuccess rate: {success_rate}")
 
         if success_rate < target_success_rate:
@@ -149,7 +149,12 @@ class SFTM:
 
       # batched warmup + best arms
       V0 = 1 / (17 * log(6 * n / delta))
-      self.bandits.pull_to_var(np.arange(n), V0, fudge_factor_var=fudge_log_norm, batched=True)
+      self.bandits.pull_to_var(
+        np.arange(n),
+        V0,
+        fudge_factor_var=fudge_log_norm,
+        max_pulls=int(self.max_init_pull_budget * self.bandits.max_pulls),
+        batched=True)
       best_arms_hat = self.best_arms(delta / 2, k, fudge_factor=fudge_bandits)
 
       if np.any(best_arms_hat != best_arms):
@@ -163,12 +168,12 @@ class SFTM:
 
       return err <= eps
     
-    if self.verbose:
+    if verbose:
       print("Fitting bandits fudge factor...")
 
     fudge_bandits = bin_search(f_check_bandits)
 
-    if self.verbose:
+    if verbose:
       print("Fitting log norm fudge factor...")
 
     fudge_log_norm = bin_search(f_check_log_norm, fudge_bandits=fudge_bandits)
@@ -185,11 +190,12 @@ class SFTM:
 
     @param x: The query vector x of shape (d,).
     @param k: The number of elements to return (default 1).
-    @return: The top-k indices and the softmax.
+    @return: The top-k indices, the probability of the top-k indices, and the
+      log normalizing constant.
     """
     mu = (self.A @ x) * self.temperature
     top_k = np.sort(np.argpartition(mu, -k)[-k:])
-    return top_k, softmax(mu)
+    return top_k, softmax(mu)[top_k], logsumexp(mu)
 
   def adaptive_softmax(
       self,
@@ -212,7 +218,7 @@ class SFTM:
       bandits algorithm to account for loose bounds (default 1.0).
     @param fudge_log_norm: The multiplier for the variance estimate used in the
       log norm algorithm to account for loose bounds (default 1.0).
-    @return: The top-k indices, the approximate softmax, and the normalizing
+    @return: The top-k indices, the approximate softmax, and the log normalizing
              constant Z.
     """
 
@@ -223,10 +229,6 @@ class SFTM:
 
     eps = self.multiplicative_error
     delta = self.failure_probability
-    sig2 = self.noise_bound if self.noise_bound is not None else self.bandits.variance
-
-    if self.verbose:
-      print(f"Noise bound: {sig2}")
 
     # batched warmup
     V0 = 1 / (17 * log(6 * self.n / delta))
@@ -234,7 +236,7 @@ class SFTM:
       np.arange(self.n),
       V0,
       fudge_factor_var=fudge_log_norm,
-      max_budget=int(self.max_init_pull_budget * self.bandits.max_pulls),
+      max_pulls=int(self.max_init_pull_budget * self.bandits.max_pulls),
       batched=True)
 
     if self.exact_pull_best_arm:
@@ -243,7 +245,7 @@ class SFTM:
       log_S_hat = self.log_norm_estimation(eps, delta / 2, fudge_factor=fudge_log_norm)
     else:
       i_star_hat = self.best_arms(delta / 3, k, fudge_factor=fudge_bandits)
-      mu_star_hat = self.estimate_arm_logits(i_star_hat, eps / 4, delta / 3, sig2)
+      mu_star_hat = self.estimate_arm_logits(i_star_hat, eps / 4, delta / 3)
       log_S_hat = self.log_norm_estimation(eps / 4, delta / 3, fudge_factor=fudge_log_norm)
 
     if self.verbose:
@@ -251,7 +253,7 @@ class SFTM:
       print(f"Estimated logit values: {mu_star_hat}")
       print(f"Estimated log normalizing constant: {log_S_hat}")
 
-    return i_star_hat, np.exp(mu_star_hat - log_S_hat), np.exp(log_S_hat)
+    return i_star_hat, np.exp(mu_star_hat - log_S_hat), log_S_hat
 
   def best_arms(
       self,
@@ -268,7 +270,6 @@ class SFTM:
     et al. (2013).
 
     @param delta: The failure probability parameter.
-    @param sig2: The noise bound parameter.
     @param k: The number of arms to return.
     @param ci_decay: The per-round decay factor for the confidence interval
       (default 0.5).
@@ -310,7 +311,7 @@ class SFTM:
 
     return confidence_set[np.argsort(estimates)[-k:]]
 
-  def estimate_arm_logits(self, arms: np.ndarray, eps: float, delta: float, sig2: float) -> np.ndarray:
+  def estimate_arm_logits(self, arms: np.ndarray, eps: float, delta: float) -> np.ndarray:
     """
     Estimates the logit values of the specified arms with PAC guarantees.
 
@@ -321,7 +322,6 @@ class SFTM:
     @param arms: The indices of the arms to estimate.
     @param eps: The multiplicative error parameter.
     @param delta: The failure probability parameter.
-    @param sig2: The noise bound parameter.
     @return: The estimated logit values of the specified arms.
     """
     if self.verbose:
@@ -335,6 +335,7 @@ class SFTM:
       eps: float,
       delta: float,
       fudge_factor: float=1.0,
+      first_pull_batched: bool=False,
     ) -> float:
     """
     Estimates the log normalizing constant of the softmax function with PAC
@@ -364,7 +365,9 @@ class SFTM:
       np.arange(n),
       V0,
       fudge_factor_var=fudge_factor,
-      max_pulls=int(self.max_init_pull_budget * self.bandits.max_pulls))
+      max_pulls=int(self.max_init_pull_budget * self.bandits.max_pulls),
+      batched=first_pull_batched,
+      )
     
     C = np.sqrt(2 * log(6 * n / delta) * var_hat)
 
