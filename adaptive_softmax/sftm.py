@@ -353,7 +353,6 @@ class SFTM:
     n = self.n
 
     V0 = 1 / (17 * log(6 * n / delta))
-    C = np.sqrt(2 * log(6 * n / delta) * V0)
 
     if self.verbose:
       print("Estimating log normalizing constant of the softmax function...")
@@ -361,11 +360,13 @@ class SFTM:
       print(f"Confidence interval constant: {C}")
 
     # initial estimates (should have already been done)
-    mu_hat, _ = self.bandits.pull_to_var(
+    mu_hat, var_hat = self.bandits.pull_to_var(
       np.arange(n),
       V0,
       fudge_factor_var=fudge_factor,
       max_pulls=int(self.max_init_pull_budget * self.bandits.max_pulls))
+    
+    C = np.sqrt(2 * log(6 * n / delta) * var_hat)
 
     if self.verbose:
       print(f"Initial estimates: {mu_hat}")
