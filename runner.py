@@ -30,6 +30,7 @@ def run_sftm(
     X: np.ndarray,
     fudge_bandits: float = 1.0,
     fudge_log_norm: float = 1.0,
+    seed: int = DEFAULT_SEED,
     ) -> pd.DataFrame:
   
   results = []
@@ -62,12 +63,12 @@ def run_sftm(
     eps = eps if sftm.exact_pull_best_arm else eps / 4
     delta = delta / 2 if sftm.exact_pull_best_arm else delta / 3
 
-    sftm.bandits.set_query(x)
+    sftm.bandits.set_query(x, seed)
     sftm.log_norm_estimation(
       eps, delta, fudge_factor=fudge_log_norm, first_pull_batched=True)
     res['budget_log_norm_estimation'] = np.sum(sftm.bandits.it)
 
-    sftm.bandits.set_query(x)
+    sftm.bandits.set_query(x, seed)
     sftm.best_arms(
       delta, 1, fudge_factor=fudge_bandits)
     res['budget_best_arms'] = np.sum(sftm.bandits.it)
@@ -75,7 +76,7 @@ def run_sftm(
     if sftm.exact_pull_best_arm:
       res['budget_estimate_best_arm'] = sftm.bandits.max_pulls
     else:
-      sftm.bandits.set_query(x)
+      sftm.bandits.set_query(x, seed)
       sftm.estimate_arm_logits(best_arm_hat, eps, delta)
       res['budget_estimate_best_arm'] = np.sum(sftm.bandits.it)
 
@@ -136,7 +137,7 @@ def run(
     X_train, X = split_train_test(X, train_size, seed)
     fudge_bandits, fudge_log_norm = sftm.tune_fudge_factors(X_train, verbose=True)
 
-  return run_sftm(model, dataset, sftm, X, fudge_bandits, fudge_log_norm)
+  return run_sftm(model, dataset, sftm, X, fudge_bandits, fudge_log_norm, seed)
 
   
 if __name__ == '__main__':
@@ -155,5 +156,5 @@ if __name__ == '__main__':
     noise_bound=None,
     use_true_sftm=False,
     use_tune=True,
-    train_size=1,
+    train_size=100,
     seed=42,))
