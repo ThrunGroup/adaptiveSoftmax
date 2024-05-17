@@ -147,7 +147,7 @@ if __name__ == '__main__':
   print(A.shape)
   print(X.shape)
 
-  print(run(
+  data = run(
     'gpt2',
     'wikitext-512',
     A,
@@ -158,4 +158,6 @@ if __name__ == '__main__':
     use_true_sftm=False,
     use_tune=True,
     train_size=1,
-    seed=42,))
+    seed=42,)
+
+  print(data['best_arm_hat', 'best_arm'])
