@@ -170,7 +170,7 @@ def single_run_adasoftmax(
     Single run of the adaSoftmax algorithm.
     :returns: whether eps is in bounds, error, total budget
     """
-    indices, z = sftm.softmax(x, k=k)
+    indices, z, _  = sftm.softmax(x, k=k)
     indices_hat, z_hat, _ = sftm.adaptive_softmax(x, k=k)
     indices_hat = np.sort(indices_hat)
     assert(np.array_equal(indices, indices_hat))

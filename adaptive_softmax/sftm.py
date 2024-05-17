@@ -170,7 +170,7 @@ class SFTM:
     
     return fudge_bandits, fudge_log_norm
 
-  def softmax(self, x: np.ndarray, k: int=1) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+  def softmax(self, x: np.ndarray, k: int=1) -> Tuple[np.ndarray, np.ndarray, float]:
     """
     Computes the true softmax, returning the top-k indices and the softmax.
 
