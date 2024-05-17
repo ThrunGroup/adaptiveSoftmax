@@ -3,6 +3,7 @@
 .ipynb_checkpoints/
 .vscode
 __pycache__/
+<<<<<<< HEAD
 *.bin
 *.pkl
 *.pt
@@ -21,3 +22,9 @@ mnl/weights
 llms/x_matrix
 llms/weights
 venv/
+=======
+.pytest_cache/
+venv_as/
+
+mnl/data/
+>>>>>>> llm

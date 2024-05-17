@@ -1,6 +1,7 @@
 import numpy as np
 from typing import Tuple
 
+from mnl.mnl_utils import load_A_and_xs
 from adaptive_softmax.sftm import SFTM
 from adaptive_softmax.constants import (
     EPSILON_SCALE,
@@ -160,12 +161,91 @@ def single_run_adasoftmax(
     indices, z = sftm.softmax(x, k=k)
     indices_hat, z_hat, _ = sftm.adaptive_softmax(x, k=k)
     indices_hat = np.sort(indices_hat)
-    wrong_arm = np.array_equal(indices, indices_hat)
+    assert(np.array_equal(indices, indices_hat))
     
     # test results
     error = np.abs(z_hat - z[indices]) / z[indices]
     in_bounds = error <= sftm.multiplicative_error  
     budget = np.sum(sftm.bandits.it)
 
-    return wrong_arm or in_bounds, error, budget
+    return in_bounds, error, budget
 
+
+def epsilon_check(dataset, loader, **kwargs):
+    """
+    Runs adasoftmax once to check multiplicative error. 
+    This test is for both mnl and llms.
+    """
+    # Load in A and xs
+    if kwargs.get('is_mnl', False):  # defaults to False if not set
+        A, xs = loader(dataset, testing=True)
+    else:
+        A, xs = loader(
+            dataset,
+            kwargs.get("model"),
+            kwargs.get("stride"),
+            testing=True
+        )
+
+    # Instantiate SFTM object
+    n, d = A.shape
+    sftm = SFTM(
+        A,
+        multiplicative_error=kwargs.get('eps'), 
+        failure_probability=kwargs.get('delta'), 
+        temperature=kwargs.get('temp'), 
+        query_importance_sampling=kwargs.get('query_importance')
+    )
+
+    # Run test
+    in_bounds, error, budget = single_run_adasoftmax(
+        sftm=sftm,
+        x=xs[0],
+        k=kwargs.get('top_k'),
+    )
+    return in_bounds, budget, n * d
+
+
+def delta_check(dataset, loader, **kwargs):
+    """
+    Runs adasoftmax num_experiment times to check delta error. 
+    This test is for both mnl and llms.
+    """
+    # Load in A and xs
+    if kwargs.get('is_mnl', False):  # defaults to False if not set
+        A, xs = loader(dataset, testing=True)
+    else:
+        A, xs = loader(
+            dataset,
+            kwargs.get("model"),
+            kwargs.get("stride"),
+            testing=True
+        )
+
+    # Instantiate SFTM object
+    n, d = A.shape
+    sftm = SFTM(
+        A, 
+        multiplicative_error=kwargs.get('eps'), 
+        failure_probability=kwargs.get('delta'), 
+        temperature=kwargs.get('temp'), 
+        query_importance_sampling=kwargs.get('query_importance')
+    )
+    
+    # Run test
+    total_wrong = 0
+    total_budget = 0
+    num_experiments = kwargs.get('num_experiments')  # Default value if not specified
+    for i in range(min(xs.shape[0], num_experiments)):
+        np.random.seed(i)
+
+        # adasoftmax
+        in_bounds, error, budget = single_run_adasoftmax(
+            sftm=sftm,
+            x=xs[i],
+            k=kwargs.get('top_k'),
+        )
+        total_wrong += int(not in_bounds)
+        total_budget += budget
+
+    return total_wrong, total_budget, n * d * num_experiments
