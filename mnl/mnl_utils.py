@@ -21,18 +21,10 @@ def train_base_model(
     """
     Trains base model.
     """
-<<<<<<< HEAD
     model.train()
 
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
-=======
-    print(f"=>> TRAINING BASE MODEL FOR {TRAINING_ITERATIONS} ITERATIONS")
-    model.train()
-
-    criterion = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=LERANING_RATE)
->>>>>>> llm
 
     for epoch in range(max_iter):
         for data, labels in dataloader:
@@ -139,10 +131,6 @@ def load_A_and_xs(
     If doesn't exist, will generate.
     
     :param dataset: expected values are 'MNIST' or 'EUROSAT'.
-<<<<<<< HEAD
-=======
-    :param testing: this is always turned on for github actions (for consistency)
->>>>>>> llm
     :returns: A and x
     """
     # Ensure the directories exist
@@ -153,11 +141,7 @@ def load_A_and_xs(
     else:
         out_channel = EUROSAT_OUT_CHANNEL
 
-<<<<<<< HEAD
     path = f'{dataset}_out{out_channel}_iter{train_iterations}.npy'
-=======
-    path = f'{dataset}_out{out_channel}_iter{train_iterations}.npz'
->>>>>>> llm
     if testing: 
         path = f'testing_{path}'
 
@@ -166,20 +150,11 @@ def load_A_and_xs(
 
     # Check if the files exist
     if os.path.exists(weights_path) and os.path.exists(x_matrix_path):
-<<<<<<< HEAD
-        A = np.load(weights_path)
-        x_matrix = np.load(x_matrix_path)
-    else:
-        A, x_matrix = generate_A_and_x(dataset)
-        np.save(weights_path, A)
-        np.save(x_matrix_path, x_matrix)
-=======
         A = np.load(weights_path, allow_pickle=False)['data']
         x_matrix = np.load(x_matrix_path, allow_pickle=False)['data']
     else:
         A, x_matrix = generate_A_and_x(dataset)
         np.savez_compressed(weights_path.rstrip('.npz'), data=A)
         np.savez_compressed(x_matrix_path.rstrip('.npz'), data=x_matrix)
->>>>>>> llm
     
     return A, x_matrix

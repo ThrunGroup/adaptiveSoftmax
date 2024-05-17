@@ -1,7 +1,6 @@
 import numpy as np
 import torch
 from hadamard_transform import hadamard_transform as ht
-<<<<<<< HEAD
 from math import ceil
 from typing import Union, Tuple
 from adaptive_softmax.constants import DEFAULT_VAR_PULL_INIT, DEFAULT_VAR_PULL_INCR
@@ -17,16 +16,10 @@ def generate_weighted_permutation(weights: np.ndarray, gen=np.random.default_rng
   """
   assert np.all(weights >= 0), 'Weights must be non-negative'
 
-=======
-
-def generate_weighted_permutation(weights: np.ndarray, gen=np.random.default_rng(0)):
-  assert np.all(weights >= 0)
->>>>>>> llm
   with np.errstate(divide='ignore'):
     logits = np.log(weights) - np.log(np.sum(weights))
     perturbed_logits = logits + gen.gumbel(size=logits.size)
     permutation = perturbed_logits.argsort()[::-1]
-<<<<<<< HEAD
 
   return permutation, logits, perturbed_logits
 
@@ -60,40 +53,23 @@ class BanditsSoftmax:
     The seed for the random number generator (default 42)
   """
 
-=======
-  return permutation, logits, perturbed_logits
-
-class BanditsSoftmax:
->>>>>>> llm
   def __init__(
       self,
       A: np.ndarray,
       temperature: float = 1.0,
-<<<<<<< HEAD
       noise_bound: float = None,
-=======
->>>>>>> llm
       atom_importance_sampling=True,
       query_importance_sampling=True,
       randomized_hadamard_transform=False,
       verbose=False,
-<<<<<<< HEAD
       seed=42,
   ):
     assert len(A.shape) == 2, 'A must be a 2D array'
-=======
-      seed=42):
-    
-    assert len(A.shape) == 2
->>>>>>> llm
 
     self.n = A.shape[0]
     self.d = A.shape[1]
     self.temperature = temperature
-<<<<<<< HEAD
     self.noise_bound = noise_bound
-=======
->>>>>>> llm
     self.atom_importance_sampling = atom_importance_sampling
     self.query_importance_sampling = query_importance_sampling
     self.randomized_hadamard_transform = randomized_hadamard_transform
@@ -101,18 +77,13 @@ class BanditsSoftmax:
 
     self._A = A
     self._x = None
-<<<<<<< HEAD
     
     gen = np.random.default_rng(seed)
-=======
-    self._gen = np.random.default_rng(seed)
->>>>>>> llm
 
     if randomized_hadamard_transform:
       dp = 2 ** int(np.ceil(np.log2(self.d)))
       self._A = np.pad(A, ((0, 0), (0, dp - self.d)), 'constant', constant_values=0)
       self.d = dp
-<<<<<<< HEAD
       self._rademacher = gen.choice([-1, 1], size=self.d)
       self._A = ht(torch.tensor(self._A * self._rademacher)).numpy()
 
@@ -121,17 +92,6 @@ class BanditsSoftmax:
     
     q = (self._atom_weights / (np.sum(self._atom_weights)) )[np.newaxis, :]
     q[q == 0 | np.isnan(q)] = 1  # NOTE 0-weight columns will never be selected
-=======
-      self._rademacher = self._gen.choice([-1, 1], size=self.d)
-      self._A = ht(torch.tensor(self._A * self._rademacher)).numpy()
-
-    self._atom_weights = np.sum(np.abs(self._A), axis=0) if atom_importance_sampling else np.ones(self.d)
-    self._permutation, self._logits, self._perturbed_logits = generate_weighted_permutation(self._atom_weights, gen=self._gen)
-    
-    # TODO deal with all-zero columns here
-
-    q = (self._atom_weights / np.sum(self._atom_weights))[np.newaxis, :]
->>>>>>> llm
     self._est_atom_sig2 = np.max(np.sum((self._A / q / self.d) ** 2 * q, axis=1))
     self._est_query_sig2 = None
     self._sparse_columns = None
@@ -141,10 +101,7 @@ class BanditsSoftmax:
 
     self._it = np.zeros(self.n, dtype=int)
     self._estimates = np.zeros(self.n, dtype=np.float64)
-<<<<<<< HEAD
     self._var = np.full(self.n, np.inf, dtype=np.float64)
-=======
->>>>>>> llm
 
     if self.verbose:
       print(f'BanditsSoftmax initialized with {self.n} arms and {self.d} dimensions')
@@ -152,7 +109,6 @@ class BanditsSoftmax:
       print(f'Query importance sampling: {self.query_importance_sampling}')
       print(f'Randomized Hadamard transform: {self.randomized_hadamard_transform}')
       print(f'Permutation:\n{self._permutation}')
-<<<<<<< HEAD
 
       if atom_importance_sampling:
         print(f'Atom weights:\n{self._atom_weights}')
@@ -165,21 +121,10 @@ class BanditsSoftmax:
     """
     The number of pulls for each arm.
     """
-=======
-      if atom_importance_sampling:
-        print(f'Atom weights:\n{self._atom_weights}')
-      if randomized_hadamard_transform:
-        print(f"Max variance before transform: {np.max(np.var(A, axis=1))}")
-        print(f"Max variance after transform: {np.max(np.var(self._A, axis=1))}")
-  
-  @property
-  def it(self):
->>>>>>> llm
     return self._it
   
   @property
   def max_pulls(self):
-<<<<<<< HEAD
     """
     The maximum number of times any arm can be pulled.
 
@@ -188,15 +133,11 @@ class BanditsSoftmax:
     vector is sparse and query-based importance sampling is enabled.
     """
     assert self._x is not None, 'Query vector not set'
-=======
-    assert self._x is not None
->>>>>>> llm
 
     return self.d - self._num_sparse_columns
   
   @property
   def variance(self):
-<<<<<<< HEAD
     """
     An upper bound of the variance of the bandit pulls.
     """
@@ -224,17 +165,6 @@ class BanditsSoftmax:
     self._it = np.zeros(self.n, dtype=int)
     self._estimates = np.zeros(self.n, dtype=np.float64)
     self._var = np.full(self.n, np.inf, dtype=np.float64)
-=======
-    assert self._x is not None
-    
-    return self._est_atom_sig2 * self._est_query_sig2 * (self.max_pulls ** 2) # TODO change back to sparsity-based but with correct mean
-
-  def set_query(self, x: np.ndarray):
-    assert x.size <= self.d if self.randomized_hadamard_transform else x.size == self.d
-
-    self._it = np.zeros(self.n, dtype=int)
-    self._estimates = np.zeros(self.n, dtype=np.float64)
->>>>>>> llm
 
     self._x = np.pad(x, (0, self.d - x.size), 'constant', constant_values=0)
 
@@ -243,11 +173,7 @@ class BanditsSoftmax:
 
     if self.query_importance_sampling:
       query_weights = np.abs(self._x)
-<<<<<<< HEAD
       self._permutation, self._logits, self._perturbed_logits = generate_weighted_permutation(query_weights * self._atom_weights, gen=gen)
-=======
-      self._permutation, self._logits, self._perturbed_logits = generate_weighted_permutation(query_weights * self._atom_weights, gen=self._gen)
->>>>>>> llm
     
     self._xp = self._x[self._permutation].copy()
 
@@ -255,7 +181,6 @@ class BanditsSoftmax:
     n_nonzero = self.d - self._num_sparse_columns
     self._est_query_sig2 = np.mean(np.abs(self._xp[:n_nonzero])) ** 2 if self.query_importance_sampling else np.mean(self._xp[:n_nonzero] ** 2)
 
-<<<<<<< HEAD
     if self.verbose and self.query_importance_sampling:
       print(f'Query weights:\n{query_weights}')
       print(f'Combined weights:\n{self._atom_weights * query_weights}')
@@ -270,33 +195,16 @@ class BanditsSoftmax:
     @return: The exact values of the specified arms
     """
     assert self._x is not None, 'Query vector not set'
-=======
-    if self.verbose:
-      print(f'Query:\n{x}')
-      if self.randomized_hadamard_transform:
-        print(f'Query after Hadamard transform:\n{self._x}')
-      if self.query_importance_sampling:
-        print(f'Query weights:\n{query_weights}')
-        print(f'Combined weights:\n{self._atom_weights * query_weights}')
-        print(f'Permutation:\n{self._permutation}')
-  
-  def exact_values(self, arms: np.ndarray) -> np.ndarray:
-    assert self._x is not None
->>>>>>> llm
 
     if np.any(self.it[arms] < self.max_pulls):
       A_arms = self._A[arms, self._permutation] if self._Ap is None else self._Ap[arms]
       self._estimates[arms] = (A_arms @ self._xp) * self.temperature
       self._it[arms] = self.max_pulls
-<<<<<<< HEAD
       self._var[arms] = 0
-=======
->>>>>>> llm
     
     return self._estimates[arms]
   
   def pull_arm(self, arm: int, it: int) -> float:
-<<<<<<< HEAD
     """
     Pull an arm the given number of times and return its estimated value.
 
@@ -305,14 +213,10 @@ class BanditsSoftmax:
     @return: The updated estimated value of the arm
     """
     assert self._x is not None, 'Query vector not set'
-=======
-    assert self._x is not None
->>>>>>> llm
     
     return self.batch_pull(np.atleast_1d(arm), it)[0]
 
   def pull(self, arms: np.ndarray, its: np.ndarray) -> np.ndarray:
-<<<<<<< HEAD
     """
     Pull the specified arms the provided number of times (may be distinct) and
     return the arms' updated estimated values.
@@ -323,16 +227,11 @@ class BanditsSoftmax:
     """
     assert self._x is not None, 'Query vector not set'
     assert arms.size == its.size, 'The number of arms and pulls must be the same'
-=======
-    assert self._x is not None
-    assert arms.size == its.size
->>>>>>> llm
 
     for i in np.nonzero(its > self._it[arms])[0]:
       self.batch_pull(np.atleast_1d(arms[i]), its[i])
     
     return self._estimates[arms]
-<<<<<<< HEAD
   
   def pull_to_var(
       self,
@@ -403,14 +302,6 @@ class BanditsSoftmax:
       print(f'Using {(it / self.max_pulls) * 100:.2f}% of the budget')
 
     if arms.size == 0 or it <= self._it[arms][0]:
-=======
-
-  def batch_pull(self, arms: np.ndarray, it: int) -> np.ndarray:
-    assert self._x is not None
-    assert np.unique(self._it[arms]).size <= 1
-
-    if arms.size == 0 or it <= self._it[0]:
->>>>>>> llm
       return self._estimates[arms]
     
     prev_it = self._it[arms][0]
@@ -425,17 +316,13 @@ class BanditsSoftmax:
       A = (self._A[np.ix_(arms, self._permutation[:next_it])] if self._Ap is None else self._Ap[arms, :next_it]).reshape((len(arms), next_it))
       x = self._xp[:next_it] / weights
       self._estimates[arms] = (A @ x) * self.temperature
-<<<<<<< HEAD
       self._var[arms] = np.sum((A * self._xp[:next_it] * self.temperature) ** 2 * (1 - weights) / (weights ** 2), axis=1)
-=======
->>>>>>> llm
 
     # no importance sampling (equal weighting)
     else:
       self._estimates[arms] *= prev_it
       self._estimates[arms] += (self._Ap[arms, prev_it:next_it] @ self._xp[prev_it:next_it]) * (self.max_pulls * self.temperature)
       self._estimates[arms] /= next_it
-<<<<<<< HEAD
       self._var[arms] = self.variance / next_it
 
     if next_it == self.max_pulls:
@@ -443,8 +330,4 @@ class BanditsSoftmax:
 
     self._it[arms] = next_it
 
-=======
-
-    self._it[arms] = next_it
->>>>>>> llm
     return self._estimates[arms]
