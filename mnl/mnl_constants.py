@@ -6,6 +6,7 @@ POOLING = 2    # halves the dimension
 
 NUM_CLASSES = 10
 TRAINING_ITERATIONS = 10    # this is num epochs
+LERANING_RATE = 1e-3
 BATCH_SIZE = 64
 
 # mnist 
@@ -17,7 +18,7 @@ MNIST_PATH = "mnl/data/mnist"
 # eurosat
 EUROSAT = "eurosat"
 EUROSAT_IN_CHANNEL = 3  # RGB
-EUROSAT_OUT_CHANNEL = 32
+EUROSAT_OUT_CHANNEL = 64
 EUROSAT_PATH = "mnl/data/eurosat"
 EUROSAT_DATAPOINTS = 27000
 
@@ -27,7 +28,7 @@ MNL_XS_DIR = 'mnl/x_matrix'
 
 # test constants
 NUM_EXPERIMENTS = 1
-MNL_DELTA_SCALE = 3   
+MNL_DELTA_SCALE = 3   # NOTE: this shouldn't change per test
 MNL_TEST_BETA = 1.0
 MNL_TEST_EPSILON = 0.1
 MNL_TEST_DELTA = 0.01
