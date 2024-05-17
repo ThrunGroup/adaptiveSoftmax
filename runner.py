@@ -34,7 +34,7 @@ def run_sftm(
     ) -> pd.DataFrame:
   
   results = []
-  for x in tqdm(X):
+  for i, x in tqdm(list(enumerate(X))):
     best_arm_hat, p_hat, log_S_hat = sftm.adaptive_softmax(
       x, fudge_bandits=fudge_bandits, fudge_log_norm=fudge_log_norm)
     best_arm, p, log_S = sftm.softmax(x)
@@ -46,6 +46,7 @@ def run_sftm(
     res['dataset'] = dataset
     res['n'] = sftm.n
     res['d'] = sftm.d
+    res['query'] = i
     res['d_not_sparse'] = sftm.bandits.max_pulls
     res['budget_total'] = total_budget
 
@@ -150,11 +151,11 @@ if __name__ == '__main__':
     'gpt2',
     'wikitext-512',
     A,
-    X,
+    X[:5],
     multiplicative_error=0.5,
     failure_probability=0.1,
     noise_bound=None,
     use_true_sftm=False,
     use_tune=True,
-    train_size=100,
+    train_size=1,
     seed=42,))

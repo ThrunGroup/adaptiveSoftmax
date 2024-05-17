@@ -144,25 +144,11 @@ class SFTM:
       return np.all(best_arms_hat == best_arms)
     
     def f_check_log_norm(fudge_bandits: float, fudge_log_norm: float, x: np.ndarray, best_arms: np.ndarray, log_norm: float) -> bool:
-      n = self.n
-      self.bandits.set_query(x)
-
-      # batched warmup + best arms
-      V0 = 1 / (17 * log(6 * n / delta))
-      self.bandits.pull_to_var(
-        np.arange(n),
-        V0,
-        fudge_factor_var=fudge_log_norm,
-        max_pulls=int(self.max_init_pull_budget * self.bandits.max_pulls),
-        batched=True)
-      best_arms_hat = self.best_arms(delta / 2, k, fudge_factor=fudge_bandits)
+      best_arms_hat, p_hat, _ = self.adaptive_softmax(x, 1, fudge_bandits=fudge_bandits, fudge_log_norm=fudge_log_norm)
 
       if np.any(best_arms_hat != best_arms):
         return False
 
-      log_norm_hat = self.log_norm_estimation(eps, delta / 2, fudge_factor=fudge_log_norm)
-
-      p_hat = np.exp(self.bandits._estimates[best_arms] - log_norm_hat)
       p = np.exp((self.A @ x)[best_arms] - log_norm)
       err = np.max(np.abs((p_hat - p) / p))
 
@@ -230,23 +216,26 @@ class SFTM:
     eps = self.multiplicative_error
     delta = self.failure_probability
 
+    delta_sub = delta / 2 if self.exact_pull_best_arm else delta / 3
+    eps_sub = eps / 4 if self.exact_pull_best_arm else eps
+
     # batched warmup
-    V0 = 1 / (17 * log(6 * self.n / delta))
+    V0 = 1 / (17 * log(6 * self.n / delta_sub))
     self.bandits.pull_to_var(
       np.arange(self.n),
       V0,
       fudge_factor_var=fudge_log_norm,
       max_pulls=int(self.max_init_pull_budget * self.bandits.max_pulls),
       batched=True)
+    
+    i_star_hat = self.best_arms(delta_sub, k, fudge_factor=fudge_bandits)
 
     if self.exact_pull_best_arm:
-      i_star_hat = self.best_arms(delta / 2, k, fudge_factor=fudge_bandits)
       mu_star_hat = self.bandits.exact_values(i_star_hat)
-      log_S_hat = self.log_norm_estimation(eps, delta / 2, fudge_factor=fudge_log_norm)
     else:
-      i_star_hat = self.best_arms(delta / 3, k, fudge_factor=fudge_bandits)
-      mu_star_hat = self.estimate_arm_logits(i_star_hat, eps / 4, delta / 3)
-      log_S_hat = self.log_norm_estimation(eps / 4, delta / 3, fudge_factor=fudge_log_norm)
+      mu_star_hat = self.estimate_arm_logits(i_star_hat, eps_sub, delta_sub)
+
+    log_S_hat = self.log_norm_estimation(eps, delta_sub, fudge_factor=fudge_log_norm)
 
     if self.verbose:
       print(f"Top-{k} arms: {i_star_hat}")
@@ -383,7 +372,7 @@ class SFTM:
     log_c = log(16 * sqrt(2) * log(6 * n / delta) / eps) + 2 * log_gamma_sum - log_alpha_sum
     log_d = log(16 * log(12 / delta) / (eps ** 2))
 
-    V1 = np.full(n, V0)
+    V1 = np.full(n, np.infty)
     V1 = np.minimum(V1, np.exp(log_gamma_sum - (log_c + log_gamma)))
     V1 = np.minimum(V1, np.exp(log_alpha_sum - (log_d + log_alpha)))
 
