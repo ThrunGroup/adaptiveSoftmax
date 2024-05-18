@@ -4,6 +4,12 @@ from typing import Tuple
 from tqdm import tqdm
 
 from adaptive_softmax.sftm import SFTM
+from llms.llm_constants import (
+  GPT2, 
+  GEMMA_7B,
+  MISTRAL_7B,
+  LLAMA_3_8B
+)
 
 DEFAULT_SEED = 42
 
@@ -83,7 +89,10 @@ def run_sftm(
 
     results.append(res)
 
-  return pd.DataFrame(results)
+  data = pd.DataFrame(results)
+
+  data.to_csv(f"{delta}_{model}.csv")
+  return data
 
 
 def run(
@@ -142,20 +151,27 @@ def run(
 
   
 if __name__ == '__main__':
-  A = np.load('llms/weights/testing_gpt2_wikitext_512.npz', allow_pickle=False)['data']
-  X = np.load('llms/x_matrix/testing_gpt2_wikitext_512.npz', allow_pickle=False)['data']
-  print(A.shape)
-  print(X.shape)
+  for model in [GPT2, MISTRAL_7B, LLAMA_3_8B, GEMMA_7B]:
+    model_name = model.replace('/', '_')
+    path = f"testing_{model_name}_wikitext_512.npz"
+    A = np.load(f'llms/weights/{path}', allow_pickle=False)['data']
+    X = np.load(f'llms/x_matrix/{path}', allow_pickle=False)['data']
+    print(A.shape)
+    print(X.shape)
 
-  print(run(
-    'gpt2',
-    'wikitext-512',
-    A,
-    X[:5],
-    multiplicative_error=0.5,
-    failure_probability=0.1,
-    noise_bound=None,
-    use_true_sftm=False,
-    use_tune=True,
-    train_size=1,
-    seed=42,))
+    print(f"running model {model_name}")
+    delta = 0.05
+    print(f"delta is {delta}")
+    print(run(
+      model_name,
+      'wikitext-512',
+      A,
+      X,
+      multiplicative_error=0.3,
+      failure_probability=delta,
+      noise_bound=None,
+      use_true_sftm=False,
+      use_tune=True,
+      train_size=100,
+      seed=42,)
+    )
