@@ -1,5 +1,7 @@
 import numpy as np
 import pandas as pd
+import argparse
+
 from typing import Tuple
 from tqdm import tqdm
 
@@ -151,7 +153,12 @@ def run(
 
   
 if __name__ == '__main__':
-  for model in [GPT2, MISTRAL_7B, LLAMA_3_8B, GEMMA_7B]:
+  parser = argparse.ArgumentParser(description="Run models with a specified delta value.")
+  parser.add_argument('--delta', type=float, required=True, help='Delta value for failure probability')
+  args = parser.parse_args()
+
+
+  for model in [MISTRAL_7B, LLAMA_3_8B, GEMMA_7B]:
     model_name = model.replace('/', '_')
     path = f"testing_{model_name}_wikitext_512.npz"
     A = np.load(f'llms/weights/{path}', allow_pickle=False)['data']
@@ -160,7 +167,7 @@ if __name__ == '__main__':
     print(X.shape)
 
     print(f"running model {model_name}")
-    delta = 0.05
+    delta = args.delta
     print(f"delta is {delta}")
     print(run(
       model_name,
