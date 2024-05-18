@@ -217,7 +217,7 @@ class SFTM:
     delta = self.failure_probability
 
     delta_sub = delta / 2 if self.exact_pull_best_arm else delta / 3
-    eps_sub = eps / 4 if self.exact_pull_best_arm else eps
+    eps_sub = eps if self.exact_pull_best_arm else eps / 4
 
     # batched warmup
     V0 = 1 / (17 * log(6 * self.n / delta_sub))
