@@ -12,7 +12,7 @@ from transformers import (
     PreTrainedTokenizerFast,
     LlamaForCausalLM,
     MistralForCausalLM,
-    GemmaForCausalLM,
+    AutoModelForCausalLM,
  ) 
 
 
@@ -67,7 +67,7 @@ def load_tokenizer_and_model(model_id=GPT2):
 
     elif model_id == GEMMA_7B:
         tokenizer = AutoTokenizer.from_pretrained(model_id)
-        model = GemmaForCausalLM.from_pretrained(model_id)
+        model = AutoModelForCausalLM.from_pretrained(model_id)
 
     else:
         raise NotImplementedError("Only GPT2 and Llama supported for now")
