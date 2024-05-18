@@ -5,9 +5,10 @@ CONST_PADDING = 2
 POOLING = 2    # halves the dimension    
 
 NUM_CLASSES = 10
-TRAINING_ITERATIONS = 10    # this is num epochs
+TRAINING_ITERATIONS = 100    # this is num epochs
 LERANING_RATE = 1e-3
 BATCH_SIZE = 64
+PATIENCE = 5
 
 # mnist 
 MNIST = "mnist"
