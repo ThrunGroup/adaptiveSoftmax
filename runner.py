@@ -158,7 +158,7 @@ if __name__ == '__main__':
   args = parser.parse_args()
 
 
-  for model in [MISTRAL_7B, LLAMA_3_8B, GEMMA_7B]:
+  for model in [GPT2]:
     model_name = model.replace('/', '_')
     path = f"testing_{model_name}_wikitext_512.npz"
     A = np.load(f'llms/weights/{path}', allow_pickle=False)['data']
