@@ -46,3 +46,7 @@ TEST_IMPORTANCE = False
 TEST_MU_LOWER = 0
 TEST_MU_UPPER = 10
 
+# synthetic constants
+SCALING_POINTS = 10
+NUM_TRIALS = 10
+

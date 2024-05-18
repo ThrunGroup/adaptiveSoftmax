@@ -20,8 +20,7 @@ mnl/x_matrix
 mnl/weights
 llms/x_matrix
 llms/weights
-venv/
 .pytest_cache/
-venv_as/
 
 mnl/data/
+venv*/

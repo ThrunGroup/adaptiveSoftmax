@@ -29,6 +29,18 @@ def construct_sanity_example(
 
     return A, x
 
+def construct_noisy_example(
+    n: int,
+    d: int,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    This creates A from a gaussian distribution and x as the first row of A.
+    """
+    A = np.random.normal(0, 1/d, (n, d))
+    x = A[0, :].copy()
+    x /= np.linalg.norm(x)
+    return A, x
+
 def construct_random_example(
     n: int,
     d: int,    
