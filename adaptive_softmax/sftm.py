@@ -207,7 +207,6 @@ class SFTM:
     @return: The top-k indices, the approximate softmax, and the log normalizing
              constant Z.
     """
-
     if self.verbose:
       print(f"Computing adaptive softmax for query vector {x}...")
 
@@ -217,7 +216,7 @@ class SFTM:
     delta = self.failure_probability
 
     delta_sub = delta / 2 if self.exact_pull_best_arm else delta / 3
-    eps_sub = eps / 4 if self.exact_pull_best_arm else eps
+    eps_sub = eps if self.exact_pull_best_arm else eps / 4
 
     # batched warmup
     V0 = 1 / (17 * log(6 * self.n / delta_sub))
@@ -315,9 +314,8 @@ class SFTM:
     """
     if self.verbose:
       print(f"Estimating logit values for arms {arms}...")
-
     V = 1 / (32 * log(2 / delta) / (eps ** 2))
-    return self.bandits.pull_to_var(arms, V)
+    return self.bandits.pull_to_var(arms, V)[0]
 
   def log_norm_estimation(
       self,

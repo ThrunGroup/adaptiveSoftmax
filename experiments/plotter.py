@@ -16,7 +16,7 @@ def get_budget_and_success_rate(data: pd.DataFrame):
 
 
 if __name__ == '__main__':
-  data = pd.read_csv('experiments/llm_results/delta_0.01/0.05_meta-llama_Meta-Llama-3-8B.csv')
+  data = pd.read_csv('experiments/llm_results/delta_0.01/0.005_gpt2.csv')
   data = clean_singleton_np_array_columns(data)
   
   print(get_budget_and_success_rate(data))

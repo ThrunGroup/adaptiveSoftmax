@@ -45,4 +45,6 @@ TEST_IMPORTANCE = False
 # elements of random mu (TODO: this assumes normalized?)
 TEST_MU_LOWER = 0
 TEST_MU_UPPER = 10
+SCALING_POINTS = 10
+NUM_TRIALS = 10
 

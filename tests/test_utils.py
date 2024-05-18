@@ -29,6 +29,18 @@ def construct_sanity_example(
 
     return A, x
 
+def construct_noisy_example(
+    n: int,
+    d: int,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    This creates A from a gaussian distribution and x as the first row of A.
+    """
+    A = np.random.normal(0, 1/d, (n, d))
+    x = A[0, :].copy()
+    x /= np.linalg.norm(x)
+    return A, x
+
 def construct_random_example(
     n: int,
     d: int,    
@@ -158,13 +170,13 @@ def single_run_adasoftmax(
     Single run of the adaSoftmax algorithm.
     :returns: whether eps is in bounds, error, total budget
     """
-    indices, z = sftm.softmax(x, k=k)
+    indices, z, _ = sftm.softmax(x, k=k)
     indices_hat, z_hat, _ = sftm.adaptive_softmax(x, k=k)
     indices_hat = np.sort(indices_hat)
     assert(np.array_equal(indices, indices_hat))
     
     # test results
-    error = np.abs(z_hat - z[indices]) / z[indices]
+    error = np.abs(z_hat - z) / z
     in_bounds = error <= sftm.multiplicative_error  
     budget = np.sum(sftm.bandits.it)
 

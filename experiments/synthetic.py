@@ -5,7 +5,6 @@ from tqdm import tqdm
 
 from adaptive_softmax.sftm import SFTM
 from tests.test_utils import construct_sanity_example, construct_noisy_example, single_run_adasoftmax
-from experiments.runner import run
 from adaptive_softmax.constants import (
     SCALING_POINTS,
     TEST_EPSILON,
@@ -67,11 +66,10 @@ def scaling_synthetic(n, initial_d, is_noisy=False):
 def plot_scaling(dimensions, naive_bdgets, budgets, variances, deltas):
     plt.figure(figsize=(10, 6))
     
-    # Plotting budgets vs. dimensions with error bars
+  
+    plt.plot(dimensions, naive_bdgets, 's-', color='red', label='Naive Budgets')
     plt.errorbar(dimensions, budgets, yerr=variances, fmt='o-', color='blue', label='Budgets', capsize=5)
     
-    # # Plotting naive budgets vs. dimensions
-    plt.plot(dimensions, naive_bdgets, 's-', color='red', label='Naive Budgets')
     
     # Adding labels and title
     plt.xlabel('Dimension (d)')
@@ -83,14 +81,15 @@ def plot_scaling(dimensions, naive_bdgets, budgets, variances, deltas):
     # Setting the x-axis to a logarithmic scale
     plt.yscale('log')
     
-    plt.grid(True)
+    # plt.grid(True)
     plt.legend()
-    plt.show()
+    plt.savefig('plot.png')
+    plt.close()
 
 if __name__ == "__main__":
-    # dimensions, naive_bdgets, budgets, variances, deltas = scaling_synthetic(n=100, initial_d=1000, is_noisy=False)
-    # plot_scaling(dimensions, naive_bdgets, budgets, variances, deltas)
-    # print(budgets)
+    dimensions, naive_bdgets, budgets, variances, deltas = scaling_synthetic(n=100, initial_d=1000, is_noisy=False)
+    plot_scaling(dimensions, naive_bdgets, budgets, variances, deltas)
+    print(budgets)
 
     dimensions, naive_bdgets, budgets, variances, deltas = scaling_synthetic(n=100, initial_d=1000, is_noisy=True)
     print(budgets)
