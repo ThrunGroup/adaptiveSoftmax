@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from hadamard_transform import hadamard_transform as ht
+# from hadamard_transform import hadamard_transform as ht
 from math import ceil
 from typing import Union, Tuple
 from adaptive_softmax.constants import DEFAULT_VAR_PULL_INIT, DEFAULT_VAR_PULL_INCR
