@@ -116,7 +116,7 @@ def register_hook(model, model_id):
     """
     # TODO: add more models
     if model_id == GPT2:
-        layer_to_hook = model.transformer 
+        layer_to_hook = model.transformer.ln_f 
 
     elif model_id in [LLAMA_3_8B, MISTRAL_7B, GEMMA_7B]:
         layer_to_hook = model.model.norm # hidden outputs get normalized (dims are the same)
@@ -144,5 +144,4 @@ def extract_final_hidden_state(module, input, output):
         hook.remove()
     """
     global final_hidden_state
-    # we only want the final hidden state. TODO: is there cleaner way to do this?
-    final_hidden_state = output[0] if isinstance(output, tuple) else output
+    final_hidden_state = output
