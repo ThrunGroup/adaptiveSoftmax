@@ -1,9 +1,17 @@
 import numpy as np
 import pandas as pd
+import argparse
+
 from typing import Tuple
 from tqdm import tqdm
 
 from adaptive_softmax.sftm import SFTM
+from llms.llm_constants import (
+  GPT2, 
+  GEMMA_7B,
+  MISTRAL_7B,
+  LLAMA_3_8B
+)
 
 DEFAULT_SEED = 42
 
@@ -83,7 +91,10 @@ def run_sftm(
 
     results.append(res)
 
-  return pd.DataFrame(results)
+  data = pd.DataFrame(results)
+
+  data.to_csv(f"{delta}_{model}.csv")
+  return data
 
 
 def run(
@@ -142,22 +153,32 @@ def run(
 
   
 if __name__ == '__main__':
-  A = np.load('llms/weights/testing_gpt2_wikitext_512.npz', allow_pickle=False)['data']
-  X = np.load('llms/x_matrix/testing_gpt2_wikitext_512.npz', allow_pickle=False)['data']
-  print(A.shape)
-  print(X.shape)
+  parser = argparse.ArgumentParser(description="Run models with a specified delta value.")
+  parser.add_argument('--delta', type=float, required=True, help='Delta value for failure probability')
+  args = parser.parse_args()
 
-  data = run(
-    'gpt2',
-    'wikitext-512',
-    A,
-    X[:5],
-    multiplicative_error=0.5,
-    failure_probability=0.1,
-    noise_bound=None,
-    use_true_sftm=False,
-    use_tune=True,
-    train_size=1,
-    seed=42,)
 
-  print(data['best_arm_hat', 'best_arm'])
+  for model in [GPT2]:
+    model_name = model.replace('/', '_')
+    path = f"testing_{model_name}_wikitext_512.npz"
+    A = np.load(f'llms/weights/{path}', allow_pickle=False)['data']
+    X = np.load(f'llms/x_matrix/{path}', allow_pickle=False)['data']
+    print(A.shape)
+    print(X.shape)
+
+    print(f"running model {model_name}")
+    delta = args.delta
+    print(f"delta is {delta}")
+    print(run(
+      model_name,
+      'wikitext-512',
+      A,
+      X,
+      multiplicative_error=0.3,
+      failure_probability=delta,
+      noise_bound=None,
+      use_true_sftm=False,
+      use_tune=True,
+      train_size=100,
+      seed=42,)
+    )

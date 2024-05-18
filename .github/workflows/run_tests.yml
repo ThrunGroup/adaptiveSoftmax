@@ -8,7 +8,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [macos-latest]
-        python-version: ["3.11"]
+        python-version: ["3.11"]  # Ensure this matches the matrix setup if used elsewhere
     
     runs-on: ${{ matrix.os }}
 
@@ -16,16 +16,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Set up Git LFS
+        run: git lfs install && git lfs pull
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: ${{ matrix.python-version }}  # Use matrix or directly specify the version
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest
-          pip install -r requirements.txt
+          pip install pytest    
+          pip install -r requirements.txt 
 
       - name: Run tests
         run: python -m pytest
