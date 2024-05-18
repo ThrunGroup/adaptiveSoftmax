@@ -74,5 +74,5 @@ if __name__ == "__main__":
     #     for model_id in [GPT2, LLAMA_3_8B, MISTRAL_7B, GEMMA_7B]:
     #         test_eps(dataset, model_id)
     #         test_delta(dataset, model_id)
-    for model_id in [LLAMA_3_8B, MISTRAL_7B, GEMMA_7B]:
+    for model_id in [GEMMA_7B]:
         test_eps(PENN_TREEBANK_DATASET, model_id)
