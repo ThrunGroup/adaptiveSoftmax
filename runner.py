@@ -68,6 +68,7 @@ def run_sftm(
 
     eps = sftm.multiplicative_error
     delta = sftm.failure_probability
+    orig_delta = sftm.failure_probability
 
     eps = eps if sftm.exact_pull_best_arm else eps / 4
     delta = delta / 2 if sftm.exact_pull_best_arm else delta / 3
@@ -93,7 +94,7 @@ def run_sftm(
 
   data = pd.DataFrame(results)
 
-  data.to_csv(f"{delta}_{model}.csv")
+  data.to_csv(f"{orig_delta}_{model}.csv")
   return data
 
 
@@ -158,9 +159,9 @@ if __name__ == '__main__':
   args = parser.parse_args()
 
 
-  for model in [GPT2]:
+  for model in [GPT2, MISTRAL_7B, LLAMA_3_8B, GEMMA_7B]:
     model_name = model.replace('/', '_')
-    path = f"testing_{model_name}_wikitext_512.npz"
+    path = f"testing_{model_name}_penn_treebank_512.npz"
     A = np.load(f'llms/weights/{path}', allow_pickle=False)['data']
     X = np.load(f'llms/x_matrix/{path}', allow_pickle=False)['data']
     print(A.shape)
@@ -171,7 +172,7 @@ if __name__ == '__main__':
     print(f"delta is {delta}")
     print(run(
       model_name,
-      'wikitext-512',
+      'penn_treebank_512',
       A,
       X,
       multiplicative_error=0.3,
