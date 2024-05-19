@@ -63,7 +63,7 @@ def run_synthetic(n, init_d):
 
         save_to = f"experiments/synthetic_results/plots"
         os.makedirs(save_to, exist_ok=True)
-        plot_scaling(dimensions, naive_budgets, budgets, success_rates, f"{save_to}_noisy_is_{is_noisy}_n={n}")
+        plot_scaling(dimensions, naive_budgets, budgets, success_rates, f"{save_to}/noisy_is_{is_noisy}_n={n}")
 
 if __name__ == "__main__":
     run_synthetic(n=100, init_d=1000)
