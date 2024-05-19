@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import pandas as pd
 import argparse
@@ -32,6 +33,7 @@ def split_train_test(
 
 
 def run_sftm(
+    save_to: str,
     model: str,
     dataset: str,
     sftm: SFTM,
@@ -40,7 +42,6 @@ def run_sftm(
     fudge_log_norm: float = 1.0,
     seed: int = DEFAULT_SEED,
     ) -> pd.DataFrame:
-  
   results = []
   for i, x in tqdm(list(enumerate(X))):
     best_arm_hat, p_hat, log_S_hat = sftm.adaptive_softmax(
@@ -68,7 +69,6 @@ def run_sftm(
 
     eps = sftm.multiplicative_error
     delta = sftm.failure_probability
-    orig_delta = sftm.failure_probability
 
     eps = eps if sftm.exact_pull_best_arm else eps / 4
     delta = delta / 2 if sftm.exact_pull_best_arm else delta / 3
@@ -92,13 +92,18 @@ def run_sftm(
 
     results.append(res)
 
+  # don't overwrite
   data = pd.DataFrame(results)
+  if not os.path.isfile(save_to):
+    data.to_csv(save_to, mode='w', header=True, index=False)
+  else: 
+    data.to_csv(save_to, mode='a', header=False, index=False)
 
-  data.to_csv(f"{orig_delta}_{model}.csv")
   return data
 
 
 def run(
+    save_to: str,
     model: str,
     dataset: str,
     A: np.ndarray,
@@ -150,7 +155,7 @@ def run(
     X_train, X = split_train_test(X, train_size, seed)
     fudge_bandits, fudge_log_norm = sftm.tune_fudge_factors(X_train, verbose=True)
 
-  return run_sftm(model, dataset, sftm, X, fudge_bandits, fudge_log_norm, seed)
+  return run_sftm(save_to, model, dataset, sftm, X, fudge_bandits, fudge_log_norm, seed)
 
   
 if __name__ == '__main__':

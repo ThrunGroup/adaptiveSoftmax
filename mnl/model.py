@@ -43,6 +43,7 @@ class BaseModel(torch.nn.Module):
                 bias=False, 
                 dtype=torch.float
             ).to(x.device)
+            print(self.linear)
         
         out = self.linear(x)
         return out
@@ -55,7 +56,7 @@ class BaseModel(torch.nn.Module):
         :return: transformed 1D vector
         """
         x = self.conv1(x)
-        # x = self.conv2(x)
+        x = self.conv2(x)
         out = torch.flatten(x, start_dim=1)
         return out
       
