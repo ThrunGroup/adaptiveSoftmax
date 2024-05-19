@@ -58,7 +58,7 @@ def generate_A_and_x(dataset: str) -> Tuple[np.ndarray, np.ndarray]:
 
     # train model
     model = BaseModel(in_channel, out_channel).to(device)
-    train(train_loader, val_loader, model, device)
+    train(train_loader, val_loader, model, device, verbose=False)
     acc = test(test_loader, model, device)
 
     # extract A and x 

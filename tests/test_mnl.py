@@ -45,7 +45,7 @@ def test_delta_mnl_eurosat():
 
 
 if __name__ == "__main__":
-    test_eps_mnl_mnist()
+    #test_eps_mnl_mnist()
     #test_delta_mnl_mnist()
-    #test_eps_mnl_eurosat()
+    test_eps_mnl_eurosat()
     #test_delta_mnl_eurosat()

@@ -1,5 +1,5 @@
 import torch
-import tqdm
+from tqdm import tqdm
 from .mnl_constants import (
     TRAINING_ITERATIONS,
     PATIENCE,
@@ -82,19 +82,21 @@ def test(
     device: torch.device,
 ) -> float:
     """
-    Tests base model.
+    Tests the model and returns the accuracy as a percentage.
     """
     model.eval()
-    accuracy = 0.0
+    total_correct = 0
+    total_samples = 0
 
     with torch.no_grad():
-        for n_batches, (data, labels) in enumerate(test_loader):
+        for data, labels in test_loader:
             data = data.to(device)
             labels = labels.to(device)
 
-            prediction = model(data)
-            correct_prediction = torch.argmax(prediction, 1) == labels
-            accuracy += correct_prediction.float().mean()
+            predictions = model(data)
+            correct_predictions = torch.argmax(predictions, 1) == labels
+            total_correct += correct_predictions.sum().item()
+            total_samples += labels.size(0)
 
-    accuracy = (100 * accuracy / n_batches)
+    accuracy = 100 * total_correct / total_samples
     return accuracy
