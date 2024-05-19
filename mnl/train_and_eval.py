@@ -1,5 +1,5 @@
 import torch
-import tqdm
+from tqdm import tqdm
 from .mnl_constants import (
     TRAINING_ITERATIONS,
     PATIENCE,
