@@ -7,19 +7,19 @@ POOLING = 2    # halves the dimension
 NUM_CLASSES = 10
 TRAINING_ITERATIONS = 10    # this is num epochs
 LERANING_RATE = 1e-3
-BATCH_SIZE = 1024  # NOTE: change this accordingly. Check free -h
+BATCH_SIZE = 512  # NOTE: change this accordingly. Check free -h
 PATIENCE = 5
 
 # mnist 
 MNIST = "mnist"
 MNIST_IN_CHANNEL = 1  # grayscale
-MNIST_OUT_CHANNEL = 256
+MNIST_OUT_CHANNEL = 256  # linear becomes 25088
 MNIST_PATH = "mnl/data/mnist"
 
 # eurosat
 EUROSAT = "eurosat"
 EUROSAT_IN_CHANNEL = 3  # RGB
-EUROSAT_OUT_CHANNEL = 512
+EUROSAT_OUT_CHANNEL = 64  # linear becomes 32768
 EUROSAT_PATH = "mnl/data/eurosat"
 EUROSAT_DATAPOINTS = 27000
 
