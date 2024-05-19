@@ -5,9 +5,10 @@ CONST_PADDING = 2
 POOLING = 2    # halves the dimension    
 
 NUM_CLASSES = 10
-TRAINING_ITERATIONS = 10    # this is num epochs
+TRAINING_ITERATIONS = 2    # this is num epochs
 LERANING_RATE = 1e-3
 BATCH_SIZE = 64
+PATIENCE = 5
 
 # mnist 
 MNIST = "mnist"
@@ -25,6 +26,7 @@ EUROSAT_DATAPOINTS = 27000
 # A and x paths
 MNL_WEIGHTS_DIR = 'mnl/weights'
 MNL_XS_DIR = 'mnl/x_matrix'
+MNL_ACC_DIR = "mnl/accuracies"
 
 # test constants
 NUM_EXPERIMENTS = 1
