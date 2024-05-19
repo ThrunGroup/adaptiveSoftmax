@@ -1,114 +1,17 @@
 import os
 import torch
 import numpy as np
+import pandas as pd
 import ssl
 
 from typing import Tuple
 
 from torchvision import datasets, transforms
-from torch.utils.data import DataLoader, Subset, random_split
+from torch.utils.data import DataLoader, random_split
 
 from .model import BaseModel
+from .train_and_eval import train, test
 from .mnl_constants import *
-
-def train_base_model(
-    train_loader: torch.utils.data.DataLoader,
-    val_loader: torch.utils.data.DataLoader,
-    model: torch.nn.Module,
-    device: torch.device,   # TODO: should this be str?
-    max_iter: int = TRAINING_ITERATIONS,
-    patience: int = PATIENCE,
-    verbose: bool = True,
-) -> None:
-    """
-    Trains base model.
-    """
-    criterion = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
-    best_val_loss = float('inf')
-    counter = 0
-    if verbose:
-        print(f"=> training on device {device}")
-        print(f"=> max iterations: {TRAINING_ITERATIONS}")
-
-    for epoch in range(max_iter):
-
-        # training step
-        model.train()
-        for data, labels in train_loader:
-            data = data.to(device)
-            labels = labels.to(device)
-
-            optimizer.zero_grad()
-
-            output = model(data)    # logits
-            loss = criterion(output, labels)
-            loss.backward()
-            optimizer.step()
-
-        if verbose:
-            print(f"Epoch {epoch} => loss: {loss}")
-    
-        # validation step
-        model.eval()
-        val_loss = 0.0
-        with torch.no_grad():
-            for data, labels in val_loader:
-                data = data.to(device)
-                labels = labels.to(device)
-                
-                output = model(data)
-                loss = criterion(output, labels)
-                val_loss += loss.item()
-        
-        val_loss /= len(val_loader)
-
-        if verbose:
-            print(f"Epoch {epoch} => Validation loss: {val_loss}")
-
-        # early stopping
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            counter = 0
-        else:
-            counter += 1
-            if counter >= patience:
-                if verbose:
-                    print("Early stopping triggered.")
-                break
-
-    if verbose:
-        print("Training complete.")
-
-
-
-def test_accuracy(
-    test_loader: torch.utils.data.DataLoader,
-    model: torch.nn.Module,
-    device: torch.device,
-) -> float:
-    """
-    Tests base model.
-    """
-    model.eval()
-    accuracy = 0.0
-    n_batches = 0
-
-    with torch.no_grad():
-        for data in test_loader:
-            n_batches += 1
-            images, labels = data
-
-            images = images.to(device)
-            labels = labels.to(device)
-
-            prediction = model(images)
-            correct_prediction = torch.argmax(prediction, 1) == labels
-            accuracy += correct_prediction.float().mean()
-
-    accuracy = (100 * accuracy / n_batches)
-    return accuracy
-
 
 def generate_A_and_x(dataset: str) -> Tuple[np.ndarray, np.ndarray]:
     """
@@ -155,12 +58,13 @@ def generate_A_and_x(dataset: str) -> Tuple[np.ndarray, np.ndarray]:
 
     # train model
     model = BaseModel(in_channel, out_channel).to(device)
-    train_base_model(train_loader, val_loader, model, device)
+    train(train_loader, val_loader, model, device)
+    acc = test(test_loader, model, device)
 
     # extract A and x 
     A = model.get_linear_weight().cpu().numpy()
     xs = model.extract_features(test_loader, device)
-    return A, xs
+    return A, xs, acc
 
 
 def load_A_and_xs(
@@ -178,12 +82,13 @@ def load_A_and_xs(
     # Ensure the directories exist
     os.makedirs(MNL_WEIGHTS_DIR, exist_ok=True)
     os.makedirs(MNL_XS_DIR, exist_ok=True)
+    os.makedirs(MNL_ACC_DIR, exist_ok=True)
     if dataset == MNIST:
         out_channel = MNIST_OUT_CHANNEL
     else:
         out_channel = EUROSAT_OUT_CHANNEL
 
-    path = f'{dataset}_out{out_channel}_iter{train_iterations}.npy'
+    path = f'{dataset}_out{out_channel}_iter{train_iterations}.npz'
     if testing: 
         path = f'testing_{path}'
 
@@ -195,8 +100,9 @@ def load_A_and_xs(
         A = np.load(weights_path, allow_pickle=False)['data']
         x_matrix = np.load(x_matrix_path, allow_pickle=False)['data']
     else:
-        A, x_matrix = generate_A_and_x(dataset)
-        np.savez_compressed(weights_path.rstrip('.npz'), data=A)
-        np.savez_compressed(x_matrix_path.rstrip('.npz'), data=x_matrix)
+        A, x_matrix, acc = generate_A_and_x(dataset)
+        pd.DataFrame({path: [acc]}).to_csv(f"{MNL_ACC_DIR}/{path[:-4]}.csv")
+        np.savez_compressed(weights_path[:-4], data=A)
+        np.savez_compressed(x_matrix_path[:-4], data=x_matrix)
     
     return A, x_matrix
