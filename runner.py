@@ -161,18 +161,20 @@ if __name__ == '__main__':
 
   for model in [GPT2, MISTRAL_7B, LLAMA_3_8B, GEMMA_7B]:
     model_name = model.replace('/', '_')
-    path = f"testing_{model_name}_penn_treebank_512.npz"
+    dataset = "penn_treebank_512"
+    path = f"testing_{model_name}_{dataset}.npz"
     A = np.load(f'llms/weights/{path}', allow_pickle=False)['data']
     X = np.load(f'llms/x_matrix/{path}', allow_pickle=False)['data']
     print(A.shape)
     print(X.shape)
 
     print(f"running model {model_name}")
+    print(f"running dataset {dataset}")
     delta = args.delta
     print(f"delta is {delta}")
     print(run(
       model_name,
-      'penn_treebank_512',
+      dataset,
       A,
       X,
       multiplicative_error=0.3,
