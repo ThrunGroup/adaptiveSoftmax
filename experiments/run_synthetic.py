@@ -2,9 +2,9 @@ import os
 import numpy as np
 import pandas as pd
 
-from tests.test_utils import construct_sanity_example, construct_noisy_example
-from experiments.plotter import clean_singleton_np_array_columns, get_budget_and_success_rate, plot_scaling
 from experiments.runner import run
+from tests.test_utils import construct_sanity_example, construct_noisy_example
+from experiments.plotter import plot_scaling, get_scaling_param
 from adaptive_softmax.constants import (
     SCALING_POINTS,
     NUM_TRIALS,
@@ -18,7 +18,7 @@ def scaling_synthetic(n, initial_d, is_noisy, path_dir):
             np.random.seed(trial)
             
             # NOTE: need to construct A each time too. Otherwise, exact search
-            A, x = construct_noisy_example(n, curr_d)
+            A, x = construct_noisy_example(n, curr_d) if is_noisy else construct_sanity_example(n, curr_d)
             model = "scaling synthetic"
             dataset = f"noisy is {is_noisy}"
             path = f"{path_dir}/d={curr_d}"
@@ -45,21 +45,7 @@ def run_synthetic(n, init_d):
         # only run if files don't exist
         if not any(os.scandir(path_dir)):
             scaling_synthetic(n=n, initial_d=init_d, is_noisy=is_noisy, path_dir=path_dir)
-
-        # this is for all d
-        dimensions = []
-        budgets = []
-        naive_budgets = []
-        success_rates = []
-
-        for file in sorted(os.listdir(path_dir)):
-            data = pd.read_csv(os.path.join(path_dir, file))
-            data = clean_singleton_np_array_columns(data)
-
-            dimensions.append(int(np.mean(data['d'])))
-            budgets.append(int(np.mean(data['budget_total'])))
-            naive_budgets.append(int(np.mean(data['d'] * data['n'])))
-            success_rates.append(get_budget_and_success_rate(data)[1])
+        dimensions, budgets, naive_budgets, success_rates = get_scaling_param(path_dir)
 
         save_to = f"experiments/synthetic_results/plots"
         os.makedirs(save_to, exist_ok=True)

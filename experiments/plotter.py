@@ -15,9 +15,27 @@ def get_budget_and_success_rate(data: pd.DataFrame):
   success_rate = np.mean(bandit_success & log_norm_success)
   return budget, success_rate
 
+def get_scaling_param(path_dir:str):
+  dimensions = []
+  budgets = []
+  naive_budgets = []
+  success_rates = []
+
+  for file in sorted(os.listdir(path_dir)):
+      data = pd.read_csv(os.path.join(path_dir, file))
+      data = clean_singleton_np_array_columns(data)
+
+      dimensions.append(int(np.mean(data['d'])))
+      budgets.append(int(np.mean(data['budget_total'])))
+      naive_budgets.append(int(np.mean(data['d'] * data['n'])))
+      success_rates.append(get_budget_and_success_rate(data)[1])
+
+  return dimensions, budgets, naive_budgets, success_rates 
+
+
+
 def plot_scaling(dimensions, naive_budgets, budgets, success_rates, save_to):
     plt.figure(figsize=(10, 6))
-    
   
     plt.plot(dimensions, naive_budgets, 's-', color='red', label='Naive Budgets')
     plt.plot(dimensions, budgets, 'o-', color='blue', label='Budgets')

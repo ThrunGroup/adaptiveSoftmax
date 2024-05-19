@@ -1,81 +1,76 @@
 import os
-import numpy as np
 import pandas as pd
-
-from tests.test_utils import construct_sanity_example, construct_noisy_example
-from experiments.plotter import clean_singleton_np_array_columns, get_budget_and_success_rate, plot_scaling
+import numpy as np
 from experiments.runner import run
-from adaptive_softmax.constants import (
-    SCALING_POINTS,
-    NUM_TRIALS,
+from experiments.plotter import plot_scaling, get_scaling_param, clean_singleton_np_array_columns, get_budget_and_success_rate
+
+from mnl.mnl_constants import (
+    MNL_SCALING_POINTS,
+    MNL_WEIGHTS_DIR,
+    MNL_XS_DIR,
+    MNL_RESULTS_DIR,
+
+    MNIST,
+    EUROSAT,
 )
+
 
 DEFAULT_SEED = 42
 
-def scaling_mnl(A, X, path_dir):
+def scaling_mnl(A, X, dataset, path_dir):
     max_d = X.shape[1]
     np.random.seed(DEFAULT_SEED)
-    
-    for curr_d in np.linspace(0, max_d, SCALING_POINTS+1)[1:]:
+
+    for curr_d in np.linspace(0, max_d, MNL_SCALING_POINTS+1)[1:].astype(int):
         indices = np.random.choice(max_d, curr_d, replace=False)
+        _A = A[:, indices]
+        _X = X[:, indices]
 
+        model = "mnl"
+        dataset = dataset
+        path = f"{path_dir}/d={curr_d}"
 
-
-       
-            np.random.seed(trial)
-            
-            
-            indices = np.random.choice(curr_)
-
-
-            A, x = construct_noisy_example(n, curr_d)
-            model = "scaling synthetic"
-            dataset = f"noisy is {is_noisy}"
-            path = f"{path_dir}/d={curr_d}"
-
-            print(run(
-                save_to=path,
-                model=model,
-                dataset=dataset,
-                A=A,
-                X=np.array(x, ndmin=2),  # this is for compabitility with runner.py
-                multiplicative_error = 0.3,
-                failure_probability = 0.01,
-                noise_bound = None,
-                use_true_sftm = True,
-                use_tune = False,
-                train_size = 1,
-            ))
+        print(run(
+            save_to=path,
+            model=model,
+            dataset=dataset,
+            A=_A,
+            X=_X[:500],
+            multiplicative_error = 0.3,
+            failure_probability = 0.01,
+            noise_bound = None,
+            use_true_sftm = False,
+            use_tune = True,
+            train_size = 100,
+        ))
         
-def run_synthetic(n, init_d):
-    for is_noisy in [True, False]:
-        path_dir = f"experiments/synthetic_results/noisy_is_{is_noisy}_n={n}"
-        os.makedirs(path_dir, exist_ok=True)
+def run_mnl():
+    for dataset in [MNIST, EUROSAT]:
+        path = f"testing_{dataset}_out256_iter10.npz"
+    A = np.load(f"{MNL_WEIGHTS_DIR}/{mnist_path}")['data']
+    X = np.load(f"{MNL_XS_DIR}/{mnist_path}")['data']
 
-        # only run if files don't exist
-        if not any(os.scandir(path_dir)):
-            scaling_synthetic(n=n, initial_d=init_d, is_noisy=is_noisy, path_dir=path_dir)
 
-        # this is for all d
-        dimensions = []
-        budgets = []
-        naive_budgets = []
-        success_rates = []
+    path_dir = f"{MNL_RESULTS_DIR}/mnist"
+    os.makedirs(path_dir, exist_ok=True)
+    scaling_mnl(A, X, "mnist", path_dir)  # TODO: be more robust
 
-        for file in sorted(os.listdir(path_dir)):
-            data = pd.read_csv(os.path.join(path_dir, file))
-            data = clean_singleton_np_array_columns(data)
+    dimensions, naive_budgets, budgets, success_rates = get_scaling_param(path_dir)
 
-            dimensions.append(int(np.mean(data['d'])))
-            budgets.append(int(np.mean(data['budget_total'])))
-            naive_budgets.append(int(np.mean(data['d'] * data['n'])))
-            success_rates.append(get_budget_and_success_rate(data)[1])
 
-        save_to = f"experiments/synthetic_results/plots"
-        os.makedirs(save_to, exist_ok=True)
-        plot_scaling(dimensions, naive_budgets, budgets, success_rates, f"{save_to}/noisy_is_{is_noisy}_n={n}")
 
 if __name__ == "__main__":
-    run_synthetic(n=100, init_d=1000)
+    
+    A = np.load(f"{MNL_WEIGHTS_DIR}/testing_mnist_out256_iter10.npz")['data']
+    X = np.load(f"{MNL_XS_DIR}/testing_mnist_out256_iter10.npz")['data']
+
+    # for file in sorted(os.listdir("results")):
+    #   data = pd.read_csv(os.path.join("results", file))
+    #   data = clean_singleton_np_array_columns(data)
+    #   print(get_budget_and_success_rate(data))
+    
+
+    dimensions, budgets, naive_budgets, success_rates = get_scaling_param("results")
+    plot_scaling(dimensions, naive_budgets, budgets, success_rates, "mnl")
     
   
