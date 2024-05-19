@@ -9,7 +9,7 @@ from typing import Tuple
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, random_split
 
-from .model import BaseModel
+from .model import BaseModelMNIST, BaseModelEuroSAT
 from .train_and_eval import train, test
 from .mnl_constants import *
 
@@ -26,9 +26,8 @@ def generate_A_and_x(dataset: str) -> Tuple[np.ndarray, np.ndarray]:
 
     # get dataset and params
     if dataset == MNIST:
-        in_channel = MNIST_IN_CHANNEL
-        out_channel = MNIST_OUT_CHANNEL
         path = MNIST_PATH
+        model = BaseModelMNIST(MNIST_IN_CHANNEL, MNIST_OUT_CHANNEL).to(device)
         dataset = datasets.MNIST(root=path, train=True, transform=transforms.ToTensor(), download=True)
 
         # split into train and val
@@ -40,9 +39,8 @@ def generate_A_and_x(dataset: str) -> Tuple[np.ndarray, np.ndarray]:
         # need this certificate to download
         ssl._create_default_https_context = ssl._create_unverified_context
         
-        in_channel = EUROSAT_IN_CHANNEL
-        out_channel = EUROSAT_OUT_CHANNEL
         path = EUROSAT_PATH
+        model = BaseModelEuroSAT(EUROSAT_IN_CHANNEL, EUROSAT_OUT_CHANNEL).to(device)
         dataset = datasets.EuroSAT(root=path, transform=transforms.ToTensor(), download=True)
 
         # split into train, val, test
@@ -57,7 +55,6 @@ def generate_A_and_x(dataset: str) -> Tuple[np.ndarray, np.ndarray]:
     test_loader = DataLoader(test_set, batch_size=BATCH_SIZE, shuffle=False)
 
     # train model
-    model = BaseModel(in_channel, out_channel).to(device)
     train(train_loader, val_loader, model, device, verbose=False)
     acc = test(test_loader, model, device)
 

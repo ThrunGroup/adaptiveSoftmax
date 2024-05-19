@@ -164,10 +164,10 @@ if __name__ == '__main__':
   args = parser.parse_args()
 
 
-  for model in [GPT2, MISTRAL_7B, LLAMA_3_8B, GEMMA_7B]:
+  for model in [GEMMA_7B]:
     model_name = model.replace('/', '_')
-    dataset = "penn_treebank_512"
-    path = f"testing_{model_name}_{dataset}.npz"
+    dataset = "wikitext"
+    path = f"testing_{model_name}_{dataset}_512.npz"
     A = np.load(f'llms/weights/{path}', allow_pickle=False)['data']
     X = np.load(f'llms/x_matrix/{path}', allow_pickle=False)['data']
     print(A.shape)
@@ -178,6 +178,7 @@ if __name__ == '__main__':
     delta = args.delta
     print(f"delta is {delta}")
     print(run(
+      f"experiments/llm_results/{dataset}/delta_{delta}/{model_name}.csv",
       model_name,
       dataset,
       A,

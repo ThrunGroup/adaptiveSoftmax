@@ -5,7 +5,7 @@ CONST_PADDING = 2
 POOLING = 2    # halves the dimension    
 
 NUM_CLASSES = 10
-TRAINING_ITERATIONS = 10    # this is num epochs
+TRAINING_ITERATIONS = 100    # this is num epochs
 LERANING_RATE = 1e-3
 BATCH_SIZE = 512  # NOTE: change this accordingly. Check free -h
 PATIENCE = 5
@@ -19,9 +19,8 @@ MNIST_PATH = "mnl/data/mnist"
 # eurosat
 EUROSAT = "eurosat"
 EUROSAT_IN_CHANNEL = 3  # RGB
-EUROSAT_OUT_CHANNEL = 64  # linear becomes 32768
+EUROSAT_OUT_CHANNEL = 128  # linear becomes 32768
 EUROSAT_PATH = "mnl/data/eurosat"
-EUROSAT_DATAPOINTS = 27000
 
 # A and x paths
 MNL_WEIGHTS_DIR = 'mnl/weights'
@@ -40,6 +39,5 @@ MNL_TEST_IMPORTANCE = False
 MNL_TEST_BUDGET_IMPROVEMENT = 1.0
 MNL_TEST_SEED = 0
 
-# mnist tests
-MNL_TEST_MNIST_LINEAR = 3136 # out_channel = 16
+
 
