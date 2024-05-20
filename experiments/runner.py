@@ -115,10 +115,12 @@ def run(
     use_tune: bool,
     train_size: int,
     seed: int = DEFAULT_SEED,
+    exact_pull_best_arm: bool = None
     ) -> pd.DataFrame:
   
   sftm = None
   if use_true_sftm:
+    use_exact = exact_pull_best_arm if exact_pull_best_arm else False
     sftm = SFTM(
       A,
       temperature=1.0,
@@ -128,12 +130,13 @@ def run(
       atom_importance_sampling=False,
       query_importance_sampling=False,
       randomized_hadamard_transform=False,
-      exact_pull_best_arm=False,
+      exact_pull_best_arm=use_exact,
       max_init_pull_budget=1,
       verbose=False,
       seed=seed,
     )
   else:
+    use_exact = exact_pull_best_arm if exact_pull_best_arm else True
     sftm = SFTM(
       A,
       temperature=1.0,

@@ -77,16 +77,18 @@ class BaseModelMNIST(torch.nn.Module):
 
 
 class CustomVGG(nn.Module):
-    def __init__(self, vgg_model):
+    def __init__(self, vgg_model, blocks_not_freezing=BLOCKS_NOT_FREEZING):
         super(CustomVGG, self).__init__()
         self.features = vgg_model.features
         self.avgpool = vgg_model.avgpool
         self.classifier = nn.Linear(VGG19_IN_FEATURES, NUM_CLASSES)
-        self._freeze_weights()
+        self._freeze_weights(blocks_not_freezing * 3)  # single block is Conv2d -> ReLU -> MaxPool2d
 
-    def _freeze_weights(self):
-        for param in self.features.parameters():
-            param.requires_grad = False
+    def _freeze_weights(self, layers_not_freezing):
+        for i, layer in enumerate(self.features):
+            if i < len(self.features) - layers_not_freezing:
+                for param in layer.parameters():
+                    param.requires_grad = False
     
     def _transform_single(self, x):
         """
