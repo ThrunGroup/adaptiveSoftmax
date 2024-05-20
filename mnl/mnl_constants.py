@@ -19,6 +19,7 @@ MNIST_PATH = "mnl/data/mnist"
 # eurosat
 EUROSAT = "eurosat"
 VGG19_IN_FEATURES = 25088
+BLOCKS_NOT_FREEZING = 1  # dictates the number of the Conv2d -> ReLU -> MaxPool2d blocks to leave unfrozen
 EUROSAT_PATH = "mnl/data/eurosat"
 
 # A and x paths
@@ -45,3 +46,5 @@ MNIST_FINAL_PATH = "mnist_out256_iter10.npz"
 EUROSAT_FINAL_PATH = ""
 SEED = 42
 NUM_QUERIES = 500
+DELTA = 0.01
+EPS = 0.3
