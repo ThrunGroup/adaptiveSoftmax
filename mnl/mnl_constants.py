@@ -6,9 +6,10 @@ POOLING = 2    # halves the dimension
 
 NUM_CLASSES = 10
 TRAINING_ITERATIONS = 50    # this is num epochs
-LERANING_RATE = 1e-3
+EPOCH = 1000  # this is how many epochs actually used in training 
+LERANING_RATE = 1e-2
 BATCH_SIZE = 512  # NOTE: change this accordingly. Check free -h
-PATIENCE = 5
+PATIENCE = 10
 
 # mnist 
 MNIST = "mnist"
@@ -19,7 +20,7 @@ MNIST_PATH = "mnl/data/mnist"
 # eurosat
 EUROSAT = "eurosat"
 VGG19_IN_FEATURES = 25088
-BLOCKS_NOT_FREEZING = 1  # dictates the number of the Conv2d -> ReLU -> MaxPool2d blocks to leave unfrozen
+BLOCKS_NOT_FREEZING = 2  # set to zero if you only want to tune linear layer
 EUROSAT_PATH = "mnl/data/eurosat"
 
 # A and x paths
@@ -42,7 +43,7 @@ MNL_TEST_SEED = 0
 
 # final experiments
 MNL_SCALING_POINTS = 5
-MNIST_FINAL_PATH = "mnist_out256_iter10.npz"
+MNIST_FINAL_PATH = "mnist_out256_iter50_epochs14.npz"
 EUROSAT_FINAL_PATH = ""
 SEED = 42
 NUM_QUERIES = 500

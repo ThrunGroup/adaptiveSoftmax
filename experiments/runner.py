@@ -169,7 +169,7 @@ if __name__ == '__main__':
 
   for model in [GEMMA_7B]:
     model_name = model.replace('/', '_')
-    dataset = "wikitext"
+    dataset = "penn_treebank"
     path = f"testing_{model_name}_{dataset}_512.npz"
     A = np.load(f'llms/weights/{path}', allow_pickle=False)['data']
     X = np.load(f'llms/x_matrix/{path}', allow_pickle=False)['data']

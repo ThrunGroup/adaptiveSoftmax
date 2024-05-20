@@ -30,7 +30,8 @@ class BaseModelMNIST(torch.nn.Module):
                 padding=CONST_PADDING,
                 stride=CONST_STRIDE
             ),     
-            nn.ReLU(),                      
+            nn.ReLU(),        
+            nn.BatchNorm2d(out_channel * 2),              
             nn.MaxPool2d(2),                
             nn.Dropout(p=0.2)
         )

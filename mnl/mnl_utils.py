@@ -24,6 +24,7 @@ from .mnl_constants import (
     
     BATCH_SIZE,
     TRAINING_ITERATIONS,
+    EPOCH,
 
     MNL_WEIGHTS_DIR,
     MNL_XS_DIR,
@@ -78,7 +79,7 @@ def generate_A_and_x(dataset: str) -> Tuple[np.ndarray, np.ndarray]:
     test_loader = DataLoader(test_set, batch_size=BATCH_SIZE, shuffle=False)
 
     # train model
-    epoch = train(train_loader, val_loader, model, device, verbose=False)
+    epoch = train(train_loader, val_loader, model, device, verbose=True)
     acc = test(test_loader, model, device)
 
     # extract A and x 
@@ -91,6 +92,7 @@ def load_A_and_xs(
         dataset: str, 
         testing: bool = True,
         train_iterations: int = TRAINING_ITERATIONS,
+        epoch: int = EPOCH,
     ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Loads A matrix (weights) and x matrix (features) for a given dataset.
@@ -108,7 +110,7 @@ def load_A_and_xs(
     else:
         out_channel = VGG19_IN_FEATURES
 
-    path = f'{dataset}_out{out_channel}_iter{train_iterations}.npz'
+    path = f'{dataset}_out{out_channel}_iter{train_iterations}_epochs{epoch}.npz'
     if testing: 
         path = f'testing_{path}'
 
@@ -121,8 +123,8 @@ def load_A_and_xs(
         x_matrix = np.load(x_matrix_path, allow_pickle=False)['data']
     else:
         A, x_matrix, acc, epoch = generate_A_and_x(dataset)
-        pd.DataFrame({path: [acc]}).to_csv(f"{MNL_ACC_DIR}/{path[:-4]}_epochs{epoch}.csv")
-        np.savez_compressed(weights_path[:-4], data=A)
-        np.savez_compressed(x_matrix_path[:-4], data=x_matrix)
+        pd.DataFrame({path: [acc]}).to_csv(f"{MNL_ACC_DIR}/{path[:-4]}.csv")
+        np.savez_compressed(f"{weights_path[:-4]}", data=A)
+        np.savez_compressed(f"{x_matrix_path[:-4]}", data=x_matrix)
     
     return A, x_matrix

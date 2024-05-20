@@ -35,6 +35,7 @@ def test_delta_mnl_mnist():
 
 def test_eps_mnl_eurosat():
     in_bounds, budget, naive_budget = epsilon_check(EUROSAT, load_A_and_xs, **constants)
+    print("in here")
     assert (in_bounds)
     assert (budget < naive_budget / MNL_TEST_BUDGET_IMPROVEMENT)
 
