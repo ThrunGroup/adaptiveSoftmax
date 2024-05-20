@@ -20,9 +20,11 @@ from .mnl_constants import (
     MNIST_OUT_CHANNEL,
     EUROSAT,
     EUROSAT_PATH,
+    VGG19_IN_FEATURES,
     
     BATCH_SIZE,
     TRAINING_ITERATIONS,
+    EPOCH,
 
     MNL_WEIGHTS_DIR,
     MNL_XS_DIR,
@@ -57,8 +59,13 @@ def generate_A_and_x(dataset: str) -> Tuple[np.ndarray, np.ndarray]:
         ssl._create_default_https_context = ssl._create_unverified_context
         
         path = EUROSAT_PATH
-        model = CustomVGG(models.vgg19(pretrained=True))
-        dataset = datasets.EuroSAT(root=path, transform=transforms.ToTensor(), download=True)
+        model = CustomVGG(models.vgg19(pretrained=True)).to(device)  # pretrained on imagenet
+        transform = transforms.Compose([ 
+            transforms.Resize(64),
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        ])
+        dataset = datasets.EuroSAT(root=path, transform=transform, download=True)
 
         # split into train, val, test
         test_size = int(0.2 * len(dataset))
@@ -72,19 +79,20 @@ def generate_A_and_x(dataset: str) -> Tuple[np.ndarray, np.ndarray]:
     test_loader = DataLoader(test_set, batch_size=BATCH_SIZE, shuffle=False)
 
     # train model
-    train(train_loader, val_loader, model, device, verbose=False)
+    epoch = train(train_loader, val_loader, model, device, verbose=True)
     acc = test(test_loader, model, device)
 
     # extract A and x 
     A = model.get_linear_weight().cpu().numpy()
     xs = model.extract_features(test_loader, device)
-    return A, xs, acc
+    return A, xs, acc, epoch
 
 
 def load_A_and_xs(
         dataset: str, 
         testing: bool = True,
         train_iterations: int = TRAINING_ITERATIONS,
+        epoch: int = EPOCH,
     ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Loads A matrix (weights) and x matrix (features) for a given dataset.
@@ -100,9 +108,9 @@ def load_A_and_xs(
     if dataset == MNIST:
         out_channel = MNIST_OUT_CHANNEL
     else:
-        out_channel = EUROSAT_OUT_CHANNEL
+        out_channel = VGG19_IN_FEATURES
 
-    path = f'{dataset}_out{out_channel}_iter{train_iterations}.npz'
+    path = f'{dataset}_out{out_channel}_iter{train_iterations}_epochs{epoch}.npz'
     if testing: 
         path = f'testing_{path}'
 
@@ -114,9 +122,9 @@ def load_A_and_xs(
         A = np.load(weights_path, allow_pickle=False)['data']
         x_matrix = np.load(x_matrix_path, allow_pickle=False)['data']
     else:
-        A, x_matrix, acc = generate_A_and_x(dataset)
+        A, x_matrix, acc, epoch = generate_A_and_x(dataset)
         pd.DataFrame({path: [acc]}).to_csv(f"{MNL_ACC_DIR}/{path[:-4]}.csv")
-        np.savez_compressed(weights_path[:-4], data=A)
-        np.savez_compressed(x_matrix_path[:-4], data=x_matrix)
+        np.savez_compressed(f"{weights_path[:-4]}", data=A)
+        np.savez_compressed(f"{x_matrix_path[:-4]}", data=x_matrix)
     
     return A, x_matrix
