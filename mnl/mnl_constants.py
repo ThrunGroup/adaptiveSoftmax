@@ -18,8 +18,7 @@ MNIST_PATH = "mnl/data/mnist"
 
 # eurosat
 EUROSAT = "eurosat"
-EUROSAT_IN_CHANNEL = 3  # RGB
-EUROSAT_OUT_CHANNEL = 128  # linear becomes 32768
+VGG19_IN_FEATURES = 25088
 EUROSAT_PATH = "mnl/data/eurosat"
 
 # A and x paths

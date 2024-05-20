@@ -3,15 +3,32 @@ import torch
 import numpy as np
 import pandas as pd
 import ssl
+import torchvision.models as models
 
 from typing import Tuple
 
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, random_split
 
-from .model import BaseModelMNIST, BaseModelEuroSAT
+from .model import BaseModelMNIST, CustomVGG
 from .train_and_eval import train, test
-from .mnl_constants import *
+from .mnl_constants import (
+    MNL_TEST_SEED,
+    MNIST,
+    MNIST_PATH,
+    MNIST_IN_CHANNEL,
+    MNIST_OUT_CHANNEL,
+    EUROSAT,
+    EUROSAT_PATH,
+    
+    BATCH_SIZE,
+    TRAINING_ITERATIONS,
+
+    MNL_WEIGHTS_DIR,
+    MNL_XS_DIR,
+    MNL_ACC_DIR,
+)
+
 
 def generate_A_and_x(dataset: str) -> Tuple[np.ndarray, np.ndarray]:
     """
@@ -40,7 +57,7 @@ def generate_A_and_x(dataset: str) -> Tuple[np.ndarray, np.ndarray]:
         ssl._create_default_https_context = ssl._create_unverified_context
         
         path = EUROSAT_PATH
-        model = BaseModelEuroSAT(EUROSAT_IN_CHANNEL, EUROSAT_OUT_CHANNEL).to(device)
+        model = CustomVGG(models.vgg19(pretrained=True))
         dataset = datasets.EuroSAT(root=path, transform=transforms.ToTensor(), download=True)
 
         # split into train, val, test

@@ -35,9 +35,21 @@ class BaseModelMNIST(torch.nn.Module):
             nn.Dropout(p=0.2)
         )
         self.linear = None  
+
+    def _transform_single(self, x):
+        """
+        Passes the raw image through the forward pass UNTIL the linear layer.
+        The output is the "x" in the paper.
+        :param x: raw data
+        :return: transformed 1D vector
+        """
+        x = self.conv1(x)
+        x = self.conv2(x)
+        out = torch.flatten(x, start_dim=1)
+        return out
         
     def forward(self, x):
-        x = self.transform_single(x)
+        x = self._transform_single(x)
         if self.linear is None:
             self.linear = torch.nn.Linear(
                 x.shape[1], 
@@ -49,18 +61,6 @@ class BaseModelMNIST(torch.nn.Module):
         
         out = self.linear(x)
         return out
-    
-    def transform_single(self, x):
-        """
-        Passes the raw image through the forward pass UNTIL the linear layer.
-        The output is the "x" in the paper.
-        :param x: raw data
-        :return: transformed 1D vector
-        """
-        x = self.conv1(x)
-        x = self.conv2(x)
-        out = torch.flatten(x, start_dim=1)
-        return out
       
     def extract_features(self, dataloader, device):
         self.eval() 
@@ -68,29 +68,54 @@ class BaseModelMNIST(torch.nn.Module):
         with torch.no_grad():
             for data, _ in dataloader:
                 data = data.to(device)
-                feature = self.transform_single(data)  
+                feature = self._transform_single(data)  
                 features.append(feature.detach().cpu())
         return torch.cat(features).numpy()
 
     def get_linear_weight(self):
         return self.linear.weight.detach()
 
-    def set_linear_weight(self, weight):
-        self.linear.weight = torch.nn.parameter.Parameter(weight)
 
+class CustomVGG(nn.Module):
+    def __init__(self, vgg_model):
+        super(CustomVGG, self).__init__()
+        self.features = vgg_model.features
+        self.avgpool = vgg_model.avgpool
+        self.classifier = nn.Linear(VGG19_IN_FEATURES, NUM_CLASSES)
+        self._freeze_weights()
 
-class SimpleClassifier(nn.Module):
-    """
-    Switch this classifier into VGG19 model for EuroSAT.
-    """
-    def __init__(self, input_features, NUM):
-        super(SimpleClassifier, self).__init__()
-        self.classifier = nn.Sequential(
-            nn.Linear(input_features, 4096),
-            nn.ReLU(inplace=True),
-            nn.Dropout(p=0.5),
-            nn.Linear(4096, NUM_CLASSES)
-        )
+    def _freeze_weights(self):
+        for param in self.features.parameters():
+            param.requires_grad = False
+    
+    def _transform_single(self, x):
+        """
+        Passes the raw image through the forward pass UNTIL the linear layer.
+        The output is the "x" in the paper.
+        :param x: raw data
+        :return: transformed 1D vector
+        """
+        x = self.features(x)
+        x = self.avgpool(x)
+        out = torch.flatten(x, 1)
+        return out
     
     def forward(self, x):
-        return self.classifier(x)
+        x = self._transform_single(x)
+        x = self.classifier(x)
+        return x
+    
+    def extract_features(self, dataloader, device):
+        self.eval() 
+        features = []
+        with torch.no_grad():
+            for data, _ in dataloader:
+                data = data.to(device)
+                feature = self._transform_single(data)  
+                features.append(feature.detach().cpu())
+        return torch.cat(features).numpy()
+
+    def get_linear_weight(self):
+        return self.classifier.classifier[0].weight.data
+    
+
