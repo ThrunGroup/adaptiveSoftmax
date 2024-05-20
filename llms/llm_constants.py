@@ -6,7 +6,7 @@ PENN_TREEBANK_DATASET = "penn_treebank"
 # paths
 LLM_WEIGHTS_DIR = "llms/weights"
 LLM_XS_DIR = "llms/x_matrix"
-LLM_TARGET_IDS_PATH = "llms/target_ids"
+LLM_RESULTS_DIR = "experiments/llm_results"
 
 # llm constants
 GPT2 = "gpt2"
@@ -27,4 +27,8 @@ LLM_TEST_TOPK = 1
 LLM_TEST_BUDGET_IMPROVEMENT = 1.0
 LLM_DELTA_SCALE = 3
 
-NUM_EXPERIMENTS = 10
+# final experimental results
+SEED = 42
+DELTA = 0.01
+EPS = 0.3
+TRAIN_SIZE = 100

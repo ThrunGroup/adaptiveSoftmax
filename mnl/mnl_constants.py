@@ -39,8 +39,9 @@ MNL_TEST_IMPORTANCE = False
 MNL_TEST_BUDGET_IMPROVEMENT = 1.0
 MNL_TEST_SEED = 0
 
-# mnist experiments
+# final experiments
 MNL_SCALING_POINTS = 5
 MNIST_FINAL_PATH = "mnist_out256_iter10.npz"
 EUROSAT_FINAL_PATH = ""
-
+SEED = 42
+NUM_QUERIES = 500

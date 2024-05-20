@@ -1,5 +1,5 @@
 import os
-import pandas as pd
+import time
 import numpy as np
 from experiments.runner import run
 from experiments.plotter import plot_scaling, get_scaling_param, clean_singleton_np_array_columns, get_budget_and_success_rate
@@ -11,15 +11,20 @@ from mnl.mnl_constants import (
     MNL_RESULTS_DIR,
 
     MNIST,
+    MNIST_FINAL_PATH,
     EUROSAT,
+    EUROSAT_FINAL_PATH,
+    SEED,
+    NUM_QUERIES,
+
+    DELTA,
+    EPS
 )
 
 
-DEFAULT_SEED = 42
-
-def scaling_mnl(A, X, dataset, path_dir):
+def scaling_mnl(A, X, dataset, path_dir, delta, eps):
     max_d = X.shape[1]
-    np.random.seed(DEFAULT_SEED)
+    np.random.seed(SEED)
 
     for curr_d in np.linspace(0, max_d, MNL_SCALING_POINTS+1)[1:].astype(int):
         indices = np.random.choice(max_d, curr_d, replace=False)
@@ -35,42 +40,33 @@ def scaling_mnl(A, X, dataset, path_dir):
             model=model,
             dataset=dataset,
             A=_A,
-            X=_X[:500],
-            multiplicative_error = 0.3,
-            failure_probability = 0.01,
+            X=_X,
+            multiplicative_error=eps,
+            failure_probability=delta,
             noise_bound = None,
             use_true_sftm = False,
             use_tune = True,
             train_size = 100,
+            exact_pull_best_arm=False  # this could work if variance is small???
         ))
         
-def run_mnl():
+def run_mnl(delta, eps):
+    curr_time = time.strftime("%H:%M:%S", time.gmtime())
     for dataset in [MNIST, EUROSAT]:
-        path = f"testing_{dataset}_out256_iter10.npz"
-    A = np.load(f"{MNL_WEIGHTS_DIR}/{mnist_path}")['data']
-    X = np.load(f"{MNL_XS_DIR}/{mnist_path}")['data']
+        loading_path = MNIST_FINAL_PATH if dataset == MNIST else EUROSAT_FINAL_PATH
 
+    A = np.load(f"{MNL_WEIGHTS_DIR}/{loading_path}")['data']
+    X = np.load(f"{MNL_XS_DIR}/{loading_path}")['data']
 
-    path_dir = f"{MNL_RESULTS_DIR}/mnist"
-    os.makedirs(path_dir, exist_ok=True)
-    scaling_mnl(A, X, "mnist", path_dir)  # TODO: be more robust
+    save_dir = f"{MNL_RESULTS_DIR}_{curr_time}/{dataset}/delta{delta}_eps{eps}"
+    os.makedirs(save_dir, exist_ok=True)
+    scaling_mnl(A, X[:NUM_QUERIES], "mnist", save_dir, delta, eps)  
 
-    dimensions, naive_budgets, budgets, success_rates = get_scaling_param(path_dir)
-
+    dimensions, naive_budgets, budgets, success_rates = get_scaling_param(save_dir)
+    plot_scaling(dimensions, naive_budgets, budgets, success_rates, "mnl")
 
 
 if __name__ == "__main__":
-    
-    A = np.load(f"{MNL_WEIGHTS_DIR}/testing_mnist_out256_iter10.npz")['data']
-    X = np.load(f"{MNL_XS_DIR}/testing_mnist_out256_iter10.npz")['data']
-
-    # for file in sorted(os.listdir("results")):
-    #   data = pd.read_csv(os.path.join("results", file))
-    #   data = clean_singleton_np_array_columns(data)
-    #   print(get_budget_and_success_rate(data))
-    
-
-    dimensions, budgets, naive_budgets, success_rates = get_scaling_param("results")
-    plot_scaling(dimensions, naive_budgets, budgets, success_rates, "mnl")
+    run_mnl(delta=DELTA, eps=EPS)
     
   
