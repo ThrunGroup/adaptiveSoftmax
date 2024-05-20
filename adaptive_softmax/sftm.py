@@ -114,24 +114,22 @@ class SFTM:
       target_success_rate = 1 - delta
       lo = TUNE_EXP_FUDGE_LOW
       hi = TUNE_EXP_FUDGE_HIGH
-      while lo + 1e-2 < hi:
+      while lo + 1e-1 < hi:
         mi = (lo + hi) / 2
         fudge_factor = 10 ** mi
 
         if verbose:
           print(f"\tTrying fudge factor: {fudge_factor}")
 
-        count_correct = 0
+        fails_remaining = int(delta * X_train.shape[0])
         for i, x in enumerate(X_train):
           fudge_b = fudge_factor if fudge_bandits is None else fudge_bandits
           fudge_ln = fudge_factor if fudge_log_norm is None else fudge_log_norm
-          count_correct += f_check(fudge_b, fudge_ln, x, TOP_K[i], LOG_NORM[i])
-        success_rate = count_correct / X_train.shape[0]
+          fails_remaining -= not f_check(fudge_b, fudge_ln, x, TOP_K[i], LOG_NORM[i])
+          if fails_remaining < 0:
+            break
 
-        if verbose:
-          print(f"\tSuccess rate: {success_rate}")
-
-        if success_rate < target_success_rate:
+        if fails_remaining < 0:
           lo = mi
         else:
           hi = mi
