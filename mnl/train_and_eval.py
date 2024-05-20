@@ -13,7 +13,7 @@ def train(
     max_iter: int = TRAINING_ITERATIONS,
     patience: int = PATIENCE,
     verbose: bool = True,
-) -> None:
+) -> int:
     """
     Trains base model.
     """
@@ -73,6 +73,8 @@ def train(
 
     if verbose:
         print("Training complete.")
+
+    return epoch + 1
 
 
 

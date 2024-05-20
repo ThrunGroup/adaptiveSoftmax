@@ -116,6 +116,6 @@ class CustomVGG(nn.Module):
         return torch.cat(features).numpy()
 
     def get_linear_weight(self):
-        return self.classifier.classifier[0].weight.data
+        return self.classifier.weight.data
     
 
