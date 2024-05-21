@@ -5,8 +5,7 @@ from tqdm import tqdm
 
 from llms.loading import load_tokenizer_and_model, load_from_datasets, get_encodings
 from llms.llm_constants import (
-    LLM_WEIGHTS_DIR,
-    LLM_XS_DIR,
+    LLM_WEIGHTS_AND_XS_DIR,
     WIKITEXT_DATASET,
     PENN_TREEBANK_DATASET,
     GPT2,
@@ -22,40 +21,31 @@ def load_llm_matrices(
         dataset=WIKITEXT_DATASET, 
         model_id=GPT2, 
         num_query=NUM_QUERY,
-        testing=True,
+        testing=False,
     ):
     """
     Reach into the forward function of the model and save the A and xs.
     Will only run if the weights don't already exist
     """
-    os.makedirs(LLM_WEIGHTS_DIR, exist_ok=True)
-    os.makedirs(LLM_XS_DIR, exist_ok=True)
+    os.makedirs(LLM_WEIGHTS_AND_XS_DIR, exist_ok=True)
     path = f"{model_id}_{dataset}_query{num_query}.npz".replace('/', '_')
+    if testing: path = f"testing_{path}"
+    full_path = f'{LLM_WEIGHTS_AND_XS_DIR}/{path}'
 
-    if testing:
-        path = f"testing_{path}"
-
-    weights_path = f'{LLM_WEIGHTS_DIR}/{path}'
-    x_matrix_path = f'{LLM_XS_DIR}/{path}'
-
-    # Check if the files exist
-    if os.path.exists(weights_path) and os.path.exists(x_matrix_path):
-        A = np.load(weights_path, allow_pickle=False)['data']
-        x_matrix = np.load(x_matrix_path, allow_pickle=False)['data']
+    # Load if file exists. Otherwise generate and save
+    if os.path.exists(full_path):
+        A, X = np.load(full_path, allow_pickle=False).values()
     else:
-        print("creating new")
-        A, x_matrix = get_llm_matrices(dataset, model_id, num_query)
+        A, X = get_llm_matrices(dataset, model_id, num_query)
+        np.savez_compressed(full_path, A=A, X=X)
 
-        np.savez_compressed(weights_path[:-4], data=A)
-        np.savez_compressed(x_matrix_path[:-4], data=x_matrix) 
-    return A, x_matrix
+    return A, X
 
 
 def get_llm_matrices(datase_name, model_id, num_query):
     """
     Run the forward function and retrieve the A and xs.
     """
-    # TODO: check dimensions!
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"device is {device}")
 

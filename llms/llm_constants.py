@@ -4,9 +4,8 @@ WIKITEXT_BETA = 1.0
 PENN_TREEBANK_DATASET = "penn_treebank"
 
 # paths
-LLM_WEIGHTS_DIR = "llms/weights"
-LLM_XS_DIR = "llms/x_matrix"
 LLM_RESULTS_DIR = "experiments/llm_results"
+LLM_WEIGHTS_AND_XS_DIR = "llms/weights_and_xs"
 
 # llm constants
 GPT2 = "gpt2"
