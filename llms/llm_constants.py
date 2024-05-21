@@ -15,7 +15,7 @@ MISTRAL_7B = "mistralai/Mistral-7B-v0.1"
 GEMMA_7B = "google/gemma-7b"
 
 # other
-CONTEXT_WINDOW_STRIDE = 512   
+CONTEXT_WINDOW_STRIDE = 256
 MAX_LENGTH = 1024  # cap this due to OOM errors
 
 # testing constants
@@ -32,3 +32,5 @@ SEED = 42
 DELTA = 0.01
 EPS = 0.3
 TRAIN_SIZE = 100
+NUM_EXPERIMENTS = 10
+NUM_QUERY = 1000

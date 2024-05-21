@@ -15,7 +15,6 @@ from transformers import (
     AutoModelForCausalLM,
  ) 
 
-
 from llms.llm_constants import (
     WIKITEXT_DATASET,
     PENN_TREEBANK_DATASET,
@@ -23,6 +22,7 @@ from llms.llm_constants import (
     LLAMA_3_8B,
     MISTRAL_7B,
     GEMMA_7B,
+    NUM_QUERY,
 )
 
 
@@ -84,4 +84,15 @@ def get_encodings(tokenizer, dataset, dataset_name):
         raise NotImplemented("only wikitext and penn treebank supported")
 
     return tokenizer("\n\n".join(dataset[key]), return_tensors="pt")
+
+
+if __name__ == "__main__":
+    for dataset in [WIKITEXT_DATASET, PENN_TREEBANK_DATASET]:
+        for model_id in [GPT2, LLAMA_3_8B, MISTRAL_7B, GEMMA_7B]:
+            load_llm_matrices(
+                dataset=dataset, 
+                model_id=model_id, 
+                num_query=1000,
+                testing=False,
+            )
 

@@ -8,19 +8,20 @@ from llms.llm_constants import (
     LLM_WEIGHTS_DIR,
     LLM_XS_DIR,
     WIKITEXT_DATASET,
+    PENN_TREEBANK_DATASET,
     GPT2,
     LLAMA_3_8B,
     MISTRAL_7B,
     GEMMA_7B,
 
     MAX_LENGTH,
-    CONTEXT_WINDOW_STRIDE,
+    NUM_QUERY
 )
 
 def load_llm_matrices(
         dataset=WIKITEXT_DATASET, 
         model_id=GPT2, 
-        stride=CONTEXT_WINDOW_STRIDE,
+        num_query=NUM_QUERY,
         testing=True,
     ):
     """
@@ -29,7 +30,7 @@ def load_llm_matrices(
     """
     os.makedirs(LLM_WEIGHTS_DIR, exist_ok=True)
     os.makedirs(LLM_XS_DIR, exist_ok=True)
-    path = f"{model_id}_{dataset}_{stride}.npz".replace('/', '_')
+    path = f"{model_id}_{dataset}_query{num_query}.npz".replace('/', '_')
 
     if testing:
         path = f"testing_{path}"
@@ -43,14 +44,14 @@ def load_llm_matrices(
         x_matrix = np.load(x_matrix_path, allow_pickle=False)['data']
     else:
         print("creating new")
-        A, x_matrix = get_llm_matrices(dataset, model_id, stride)
+        A, x_matrix = get_llm_matrices(dataset, model_id, num_query)
 
         np.savez_compressed(weights_path[:-4], data=A)
         np.savez_compressed(x_matrix_path[:-4], data=x_matrix) 
     return A, x_matrix
 
 
-def get_llm_matrices(datase_name, model_id, stride):
+def get_llm_matrices(datase_name, model_id, num_query):
     """
     Run the forward function and retrieve the A and xs.
     """
@@ -67,6 +68,7 @@ def get_llm_matrices(datase_name, model_id, stride):
     encodings = get_encodings(tokenizer, dataset, datase_name)
     max_length = get_max_length(model, model_id)
     seq_len = encodings.input_ids.size(1)  
+    stride = int((seq_len - max_length) / num_query)
 
     Xs = []
     for begin in tqdm(range(0, seq_len, stride)):
@@ -90,9 +92,9 @@ def get_llm_matrices(datase_name, model_id, stride):
 
 def get_max_length(model, model_id):
     if model_id == GPT2:
-        max_length = model.config.n_positions
+        max_length = model.config.n_positions // 2
     elif model_id in [LLAMA_3_8B, MISTRAL_7B, GEMMA_7B]:
-        max_length = model.config.max_position_embeddings // 2
+        max_length = model.config.max_position_embeddings // 4
 
     return min(max_length, MAX_LENGTH)
 
@@ -145,3 +147,16 @@ def extract_final_hidden_state(module, input, output):
     """
     global final_hidden_state
     final_hidden_state = output
+
+
+if __name__ == "__main__":
+    for dataset in [WIKITEXT_DATASET, PENN_TREEBANK_DATASET]:
+        print(f"=> dataset {dataset}")
+        for model_id in [GPT2, LLAMA_3_8B, MISTRAL_7B, GEMMA_7B]:
+            print(f"=> model_id {model_id}")
+            load_llm_matrices(
+                dataset=dataset, 
+                model_id=model_id, 
+                num_query=1000,
+                testing=False,
+            )
