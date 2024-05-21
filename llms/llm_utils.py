@@ -39,6 +39,7 @@ def load_llm_matrices(
         A, X = get_llm_matrices(dataset, model_id, num_query)
         np.savez_compressed(full_path, A=A, X=X)
 
+    print(X.shape)
     return A, X
 
 
@@ -60,6 +61,8 @@ def get_llm_matrices(datase_name, model_id, num_query):
     seq_len = encodings.input_ids.size(1)  
     stride = int((seq_len - max_length) / num_query)
 
+    print("num_queries should be", int((seq_len - max_length)/stride))
+
     Xs = []
     for begin in tqdm(range(0, seq_len, stride)):
         end = min(begin + max_length, seq_len)
@@ -77,7 +80,7 @@ def get_llm_matrices(datase_name, model_id, num_query):
             Xs.append(x)
         hook.remove()
 
-    return A, Xs
+    return A, np.array(Xs)
 
 
 def get_max_length(model, model_id):
@@ -140,7 +143,7 @@ def extract_final_hidden_state(module, input, output):
 
 
 if __name__ == "__main__":
-    for dataset in [WIKITEXT_DATASET, PENN_TREEBANK_DATASET]:
+    for dataset in [PENN_TREEBANK_DATASET]:
         print(f"=> dataset {dataset}")
         for model_id in [GPT2, LLAMA_3_8B, MISTRAL_7B, GEMMA_7B]:
             print(f"=> model_id {model_id}")
