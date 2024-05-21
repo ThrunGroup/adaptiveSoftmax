@@ -114,7 +114,7 @@ class SFTM:
       target_success_rate = 1 - delta
       lo = TUNE_EXP_FUDGE_LOW
       hi = TUNE_EXP_FUDGE_HIGH
-      while lo + 1e-1 < hi:
+      while lo + 1e-2 < hi:
         mi = (lo + hi) / 2
         fudge_factor = 10 ** mi
 
@@ -134,7 +134,7 @@ class SFTM:
         else:
           hi = mi
 
-      return 10 ** ((lo + hi) / 2)
+      return 10 ** hi
     
     def f_check_bandits(fudge_bandits: float, _fudge_log_norm: float, x: np.ndarray, best_arms: np.ndarray, _log_norm: float) -> bool:
       self.bandits.set_query(x)
