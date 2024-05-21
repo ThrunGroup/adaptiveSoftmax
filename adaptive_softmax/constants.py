@@ -42,9 +42,14 @@ TEST_SEED = 0
 TEST_SAMPLES_FOR_SIGMA = None   # this uses all d
 TEST_IMPORTANCE = False
 
-# elements of random mu (TODO: this assumes normalized?)
+# elements of random mu 
 TEST_MU_LOWER = 0
 TEST_MU_UPPER = 10
+
+# synthetic experiment settings
 SCALING_POINTS = 10
-NUM_TRIALS = 10
+NUM_TRIALS = 100
+SYNTHETIC_RESULT_DIR = "experiments/synthetic_results"
+TOY_GAUSSAIN = "toy_gaussian"
+REGULAR_GUASSIAN = "regular_gaussian"
 

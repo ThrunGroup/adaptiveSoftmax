@@ -25,6 +25,8 @@ def construct_sanity_example(
     """
     A = np.zeros((n, d))
     A[0] = 1 / d
+    noise = np.random.normal(0, 1/d, size=A.shape)
+    A += noise
     x = np.ones(d)
 
     return A, x
@@ -37,8 +39,7 @@ def construct_noisy_example(
     This creates A from a gaussian distribution and x as the first row of A.
     """
     A = np.random.normal(0, 1/d, (n, d))
-    x = A[0, :].copy()
-    x /= np.linalg.norm(x)
+    x = np.sign(A[0])
     return A, x
 
 def construct_random_example(

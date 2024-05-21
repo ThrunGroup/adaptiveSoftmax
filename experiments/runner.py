@@ -162,12 +162,7 @@ def run(
 
   
 if __name__ == '__main__':
-  parser = argparse.ArgumentParser(description="Run models with a specified delta value.")
-  parser.add_argument('--delta', type=float, required=True, help='Delta value for failure probability')
-  args = parser.parse_args()
-
-
-  for model in [GEMMA_7B]:
+  for model in [GPT2, LLAMA_3_8B, MISTRAL_7B, GEMMA_7B]:
     model_name = model.replace('/', '_')
     dataset = "penn_treebank"
     path = f"testing_{model_name}_{dataset}_512.npz"
@@ -176,22 +171,22 @@ if __name__ == '__main__':
     print(A.shape)
     print(X.shape)
 
-    print(f"running model {model_name}")
-    print(f"running dataset {dataset}")
-    delta = args.delta
-    print(f"delta is {delta}")
-    print(run(
-      f"experiments/llm_results/{dataset}/delta_{delta}/{model_name}.csv",
-      model_name,
-      dataset,
-      A,
-      X,
-      multiplicative_error=0.3,
-      failure_probability=delta,
-      noise_bound=None,
-      use_true_sftm=False,
-      use_tune=True,
-      train_size=100,
-      seed=42,)
-    )
+    # print(f"running model {model_name}")
+    # print(f"running dataset {dataset}")
+    # delta = args.delta
+    # print(f"delta is {delta}")
+    # print(run(
+    #   f"experiments/llm_results/{dataset}/delta_{delta}/{model_name}.csv",
+    #   model_name,
+    #   dataset,
+    #   A,
+    #   X,
+    #   multiplicative_error=0.3,
+    #   failure_probability=delta,
+    #   noise_bound=None,
+    #   use_true_sftm=False,
+    #   use_tune=True,
+    #   train_size=100,
+    #   seed=42,)
+    # )
   

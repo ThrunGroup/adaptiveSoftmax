@@ -43,9 +43,10 @@ MNL_TEST_SEED = 0
 
 # final experiments
 MNL_SCALING_POINTS = 5
-MNIST_FINAL_PATH = "mnist_out256_iter50_epochs14.npz"
-EUROSAT_FINAL_PATH = ""
+MNIST_FINAL_PATH = "testing_mnist_out256_iter50_epochs14.npz"
+EUROSAT_FINAL_PATH = "testing_eurosat_out25088_iter50_epochs1000.npz"
 SEED = 42
-NUM_QUERIES = 500
+NUM_QUERIES = 1000
+FUDGE_TRAIN_SIZE = 200
 DELTA = 0.01
 EPS = 0.3
