@@ -8,6 +8,12 @@ DELTA_SCALE = 3
 BATCH_SIZE = 128
 IMPORTANCE = True  # toggle this for importance sampling
 SIGMA_BUFFER = 1e-3
+DEFAULT_CI_INIT = 1/4
+DEFAULT_CI_DECAY = 1/2
+DEFAULT_VAR_PULL_INIT = 16
+DEFAULT_VAR_PULL_INCR = 3/2
+TUNE_EXP_FUDGE_LOW = -6
+TUNE_EXP_FUDGE_HIGH = 0
 
 # budget constants
 UNI_CONST = 3e-3
@@ -39,4 +45,6 @@ TEST_IMPORTANCE = False
 # elements of random mu (TODO: this assumes normalized?)
 TEST_MU_LOWER = 0
 TEST_MU_UPPER = 10
+SCALING_POINTS = 10
+NUM_TRIALS = 10
 

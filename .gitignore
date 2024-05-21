@@ -15,4 +15,9 @@ experimental.py
 log.txt
 *.png
 softmax/
+mnl/data
 venv/
+.pytest_cache/
+venv_as/
+
+mnl/data/
