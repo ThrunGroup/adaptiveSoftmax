@@ -24,10 +24,9 @@ from llms.llm_constants import (
 )
 
 
-def run_llm(dataset, model, delta=0.01, eps=0.3, curr_time=None):
+def run_llm(curr_time, dataset, model, delta=0.01, eps=0.3):
   print(model, dataset)
   model_name = model.replace('/', '_')
-  curr_time = curr_time if curr_time else time.strftime("%H:%M:%S", time.gmtime())
   save_dir = f"{LLM_RESULTS_DIR}/{curr_time}/{dataset}/delta{delta}_eps{eps}"
   os.makedirs(save_dir, exist_ok=True)
 
@@ -56,12 +55,13 @@ def run_llm(dataset, model, delta=0.01, eps=0.3, curr_time=None):
     )
 
 if __name__ == '__main__':
+  curr_time = time.strftime("%H:%M:%S", time.gmtime())
   for dataset in [WIKITEXT_DATASET, PENN_TREEBANK_DATASET]:
     for model in [GPT2, LLAMA_3_8B, MISTRAL_7B, GEMMA_7B]:
       run_llm(
+          curr_time,
           dataset,
           model,
           delta=DELTA, 
           eps=EPS,
-          curr_time=None
       )

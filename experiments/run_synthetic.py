@@ -26,7 +26,7 @@ def scaling_synthetic(n, initial_d, dataset, path_dir):
                 noise_bound = 1
             else: 
                 A, x = construct_sanity_example(n, curr_d)
-                noise_bound = 0
+                noise_bound = 1
 
             model = "scaling synthetic"
             path = f"{path_dir}/d={curr_d}"
