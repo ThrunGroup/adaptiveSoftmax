@@ -1,0 +1,2 @@
+model,dataset,n,d,query,d_not_sparse,budget_total,best_arm_hat,p_hat_best_arm_hat,log_S_hat,best_arm,p_best_arm,log_S,budget_log_norm_estimation,budget_best_arms,budget_estimate_best_arm
+scaling synthetic,toy_gaussian,100,80000,0,80000,1600,[0],[0.03046316],4.671406135554328,[0],[0.02665689],4.622501433887736,1600,1600,16
