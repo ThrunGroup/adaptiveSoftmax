@@ -11,6 +11,8 @@ __pycache__/
 input.txt
 
 experimental.py
+experiments/mnl_results
+experiments/llm_results
 
 log.txt
 *.png
