@@ -5,6 +5,6 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=colins26@stanford.edu
-#SBATCH --array=0-65
+#SBATCH --array=0-23
 
-python -u run_experiment.py -i ${SLURM_ARRAY_TASK_ID}
+python -u -m experiments.for_batching.batch_llm -i ${SLURM_ARRAY_TASK_ID}
