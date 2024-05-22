@@ -3,6 +3,13 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
+def print_results(path: str):
+  data = pd.read_csv(path)
+  data = clean_singleton_np_array_columns(data)
+  budget, success_rate = get_budget_and_success_rate(data)
+  gain = 1 / budget
+  print(f"Budget: {budget}, Success Rate: {success_rate}, Gain: {gain}")
+
 def clean_singleton_np_array_columns(data: pd.DataFrame):
   for col in data.columns:
     data[col] = data[col].apply(lambda x: float(x.strip('[]')) if (isinstance(x, str) and '[' in x) else x)
@@ -57,33 +64,20 @@ def get_scaling_param(path_dir:str):
   return dimensions.tolist(), budgets.tolist(), naive_budgets.tolist(), budget_stds, budget_percentages, success_rates.tolist()
 
 
-def plot_scaling(dimensions, naive_budgets, budgets, stds, percentages, success_rates, save_to):
-    plt.figure(figsize=(10, 6))
-  
-    # Plot budgets first
-    print(stds)
-    print(budgets)
-    plt.plot(dimensions, naive_budgets, 's-', color='red', label='Naive Budgets')
-    plt.errorbar(dimensions, budgets, yerr=stds, fmt='o-', color='blue', label='Budgets', capsize=5)
-    plt.yscale('log')
+def plot_scaling(run_data, save_dir):
+    dimensions = run_data['d']
+    per_arm_budgets = run_data['per_arm_budgets']
+    path = f"{save_dir}/scaling_plots.pdf"
 
-    #values = np.log(np.log(np.array(dimensions)))
-    #plt.plot(dimensions, budgets[0] * values / values[0] )
+    plt.figure(figsize=(10, 6))
+    plt.errorbar(dimensions, per_arm_budgets, fmt='o-', color='blue', label='Budgets', capsize=5)
+    plt.yscale('log')
+    plt.xscale('log')
 
     plt.xlabel('Dimension (d)')
-    plt.ylabel('Budget')
-    plt.title(
-    f"""
-      Percentages = {", ".join(format(percentage, ".3f") for percentage in percentages)}
-      Success rates = {", ".join(format(rate, ".2f") for rate in success_rates)}
-    """)
+    plt.ylabel('Per-arm Budget')
     
-    plt.legend()
-    plt.savefig(f"{save_to}/scaling_plots.png")
+    plt.savefig(path, bbox_inches='tight', format='pdf')
     plt.close()
 
-if __name__ == '__main__':
-  data = pd.read_csv('experiments/llm_results/penn_treebank/delta_0.01/0.05_google_gemma-7b.csv')
-  data = clean_singleton_np_array_columns(data)
-  print("===>", get_budget_and_success_rate(data))
-  
+    return path

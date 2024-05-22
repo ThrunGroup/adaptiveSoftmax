@@ -343,7 +343,6 @@ class SFTM:
     if self.verbose:
       print("Estimating log normalizing constant of the softmax function...")
       print(f"Initial sample mean threshold: {V0}")
-      print(f"Confidence interval constant: {C}")
 
     # initial estimates (should have already been done)
     mu_hat, var_hat = self.bandits.pull_to_var(

@@ -1,8 +1,11 @@
 #!/bin/bash
 
-# Upgrade pip and install dependencies
-python3 -m pip install --upgrade pip
-python3 -m pip install -r requirements.txt
+conda create -n sftm python=3.11
+source activate sftm || { echo "Failed to activate Conda environment"; exit 1; }
 
-# Run the Python module
-python3 -m llms.gpt2.gpt_experiments
+# # Upgrade pip and install dependencies
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+
+# # Run the Python module
+python main.py

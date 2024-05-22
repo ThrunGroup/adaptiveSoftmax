@@ -1,5 +1,4 @@
 import os
-import time
 import numpy as np
 
 from experiments.runner import run
@@ -27,26 +26,29 @@ def run_llm(dataset, model, delta=0.01, eps=0.3):
   save_dir = f"{LLM_RESULTS_DIR}/{dataset}/delta{delta}_eps{eps}"
   os.makedirs(save_dir, exist_ok=True)
 
+  print(f"running model {model_name} on dataset {dataset} with delta {delta} and eps {eps}")
+
   # run sftm if not exist
   save_path = f"{save_dir}/{model_name}.csv"
-  if not any(os.scandir(save_dir)):
-    A, X = load_llm_data(dataset, model, NUM_QUERY, testing=False)
-    print("loaded successfully")
+  A, X = load_llm_data(dataset, model, NUM_QUERY, testing=False)
+  print("loaded successfully")
 
-    run(
-        save_to=f"{save_path}_raw.csv",
-        model=model_name,
-        dataset=dataset,
-        A=A,
-        X=X,
-        multiplicative_error=eps,
-        failure_probability=delta,
-        noise_bound=None,
-        use_true_sftm=False,
-        use_tune=True,
-        train_size=FUDGE_TRAIN_SIZE,
-        seed=SEED,
-    )
+  run(
+      save_to=save_path,
+      model=model_name,
+      dataset=dataset,
+      A=A,
+      X=X,
+      multiplicative_error=eps,
+      failure_probability=delta,
+      noise_bound=None,
+      use_true_sftm=False,
+      use_tune=True,
+      train_size=FUDGE_TRAIN_SIZE,
+      seed=SEED,
+  )
+
+  return save_path
 
 if __name__ == '__main__':
   for dataset in [WIKITEXT_DATASET, PENN_TREEBANK_DATASET]:

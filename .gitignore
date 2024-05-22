@@ -13,6 +13,7 @@ input.txt
 experimental.py
 experiments/mnl_results
 experiments/llm_results
+experiments/synthetic_results
 
 log.txt
 *.png

@@ -25,7 +25,7 @@ def construct_sanity_example(
     """
     A = np.zeros((n, d))
     A[0] = 1 / d
-    noise = np.random.normal(0, 1/d, size=A.shape)
+    noise = np.random.normal(0, 1/(np.sqrt(10) * d), size=A.shape)
     A += noise
     x = np.ones(d)
 

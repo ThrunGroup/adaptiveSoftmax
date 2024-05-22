@@ -41,9 +41,13 @@ def run_sftm(
     fudge_bandits: float = 1.0,
     fudge_log_norm: float = 1.0,
     seed: int = DEFAULT_SEED,
+    quiet: bool = False,
     ) -> pd.DataFrame:
   results = []
-  for i, x in tqdm(list(enumerate(X))):
+  it = enumerate(X)
+  if not quiet:
+    it = tqdm(list(it))
+  for i, x in it:
     best_arm_hat, p_hat, log_S_hat = sftm.adaptive_softmax(
       x, fudge_bandits=fudge_bandits, fudge_log_norm=fudge_log_norm)
     best_arm, p, log_S = sftm.softmax(x)
@@ -94,10 +98,8 @@ def run_sftm(
 
   # don't overwrite
   data = pd.DataFrame(results)
-  if not os.path.isfile(save_to):
+  if save_to is not None:
     data.to_csv(save_to, mode='w', header=True, index=False)
-  else: 
-    data.to_csv(save_to, mode='a', header=False, index=False)
 
   return data
 
@@ -115,12 +117,11 @@ def run(
     use_tune: bool,
     train_size: int,
     seed: int = DEFAULT_SEED,
-    exact_pull_best_arm: bool = None
+    quiet: bool = False,
     ) -> pd.DataFrame:
   
   sftm = None
   if use_true_sftm:
-    use_exact = exact_pull_best_arm if exact_pull_best_arm else False
     sftm = SFTM(
       A,
       temperature=1.0,
@@ -130,13 +131,12 @@ def run(
       atom_importance_sampling=False,
       query_importance_sampling=False,
       randomized_hadamard_transform=False,
-      exact_pull_best_arm=use_exact,
+      exact_pull_best_arm=False,
       max_init_pull_budget=1,
       verbose=False,
       seed=seed,
     )
   else:
-    use_exact = exact_pull_best_arm if exact_pull_best_arm else True
     sftm = SFTM(
       A,
       temperature=1.0,
@@ -158,35 +158,4 @@ def run(
     X_train, X = split_train_test(X, train_size, seed)
     fudge_bandits, fudge_log_norm = sftm.tune_fudge_factors(X_train, verbose=True)
 
-  return run_sftm(save_to, model, dataset, sftm, X, fudge_bandits, fudge_log_norm, seed)
-
-  
-if __name__ == '__main__':
-  for model in [GPT2, LLAMA_3_8B, MISTRAL_7B, GEMMA_7B]:
-    model_name = model.replace('/', '_')
-    dataset = "penn_treebank"
-    path = f"testing_{model_name}_{dataset}_512.npz"
-    A = np.load(f'llms/weights/{path}', allow_pickle=False)['data']
-    X = np.load(f'llms/x_matrix/{path}', allow_pickle=False)['data']
-    print(A.shape)
-    print(X.shape)
-
-    # print(f"running model {model_name}")
-    # print(f"running dataset {dataset}")
-    # delta = args.delta
-    # print(f"delta is {delta}")
-    # print(run(
-    #   f"experiments/llm_results/{dataset}/delta_{delta}/{model_name}.csv",
-    #   model_name,
-    #   dataset,
-    #   A,
-    #   X,
-    #   multiplicative_error=0.3,
-    #   failure_probability=delta,
-    #   noise_bound=None,
-    #   use_true_sftm=False,
-    #   use_tune=True,
-    #   train_size=100,
-    #   seed=42,)
-    # )
-  
+  return run_sftm(save_to, model, dataset, sftm, X, fudge_bandits, fudge_log_norm, seed, quiet)

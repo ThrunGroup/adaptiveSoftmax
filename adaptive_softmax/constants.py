@@ -47,8 +47,8 @@ TEST_MU_LOWER = 0
 TEST_MU_UPPER = 10
 
 # synthetic experiment settings
-SCALING_POINTS = 10
-NUM_TRIALS = 100
+SCALING_POINTS = 20
+NUM_TRIALS = 3
 SYNTHETIC_RESULT_DIR = "experiments/synthetic_results"
 TOY_GAUSSAIN = "toy_gaussian"
 REGULAR_GUASSIAN = "regular_gaussian"
