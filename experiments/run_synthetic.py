@@ -22,7 +22,7 @@ def scaling_synthetic(n, dataset):
     avg_per_arm_budgets = []
     std_errs = []
 
-    d = (10 ** np.linspace(3, 6, 10)).astype(int)
+    d = (10 ** np.linspace(3, 6, 20)).astype(int)
 
     for curr_d in tqdm(d):
         per_arm_budgets = []
@@ -61,6 +61,7 @@ def scaling_synthetic(n, dataset):
 
     run_data = {
         'd': d,
+        'n': n,
         'per_arm_budgets': avg_per_arm_budgets,
         'stderr': std_errs,
     }

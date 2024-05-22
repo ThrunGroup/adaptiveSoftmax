@@ -1,6 +1,7 @@
 from experiments.run_llm import run_llm
 from experiments.run_mnl import run_mnl
 from experiments.run_synthetic import run_and_plot_synthetic
+from experiments.run_variances import run_and_plot_variances
 from experiments.plotter import print_results
 
 from llms.llm_constants import (
@@ -44,6 +45,10 @@ if __name__ == '__main__':
     )
     print_results(path)
     print()
+
+  # Run and plot variances
+  plot_paths = run_and_plot_variances()
+  print(f"Plots for variances saved to {plot_paths}")
 
   # Run and plot synthetic data experiments
   plot_paths = run_and_plot_synthetic(n=100)

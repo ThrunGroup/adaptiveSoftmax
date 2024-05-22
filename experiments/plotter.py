@@ -65,14 +65,17 @@ def get_scaling_param(path_dir:str):
 
 
 def plot_scaling(run_data, save_dir):
+    n = run_data['n']
     dimensions = run_data['d']
     per_arm_budgets = run_data['per_arm_budgets']
     path = f"{save_dir}/scaling_plots.pdf"
 
     plt.figure(figsize=(10, 6))
     plt.errorbar(dimensions, per_arm_budgets, fmt='o-', color='blue', label='Budgets', capsize=5)
+    plt.errorbar(dimensions, dimensions, fmt='o-', color='red', label='Naive Budgets', capsize=5)
     plt.yscale('log')
     plt.xscale('log')
+    plt.legend()
 
     plt.xlabel('Dimension (d)')
     plt.ylabel('Per-arm Budget')

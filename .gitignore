@@ -14,6 +14,7 @@ experimental.py
 experiments/mnl_results
 experiments/llm_results
 experiments/synthetic_results
+experiments/var_results
 
 log.txt
 *.png
