@@ -3,7 +3,7 @@ import time
 import numpy as np
 
 from experiments.runner import run
-from llms.llm_utils import load_llm_matrices
+from llms.llm_utils import load_llm_data
 from llms.llm_constants import (
   WIKITEXT_DATASET,
   PENN_TREEBANK_DATASET,
@@ -22,16 +22,17 @@ from llms.llm_constants import (
 )
 
 
-def run_llm(curr_time, dataset, model, delta=0.01, eps=0.3):
+def run_llm(dataset, model, delta=0.01, eps=0.3):
   model_name = model.replace('/', '_')
-  save_dir = f"{LLM_RESULTS_DIR}/{curr_time}/{dataset}/delta{delta}_eps{eps}"
+  save_dir = f"{LLM_RESULTS_DIR}/{dataset}/delta{delta}_eps{eps}"
   os.makedirs(save_dir, exist_ok=True)
 
   # run sftm if not exist
   save_path = f"{save_dir}/{model_name}.csv"
   if not any(os.scandir(save_dir)):
-    A, X = load_llm_matrices(dataset, model, NUM_QUERY, testing=False)
+    A, X = load_llm_data(dataset, model, NUM_QUERY, testing=False)
     print("loaded successfully")
+
     run(
         save_to=f"{save_path}_raw.csv",
         model=model_name,
@@ -48,11 +49,9 @@ def run_llm(curr_time, dataset, model, delta=0.01, eps=0.3):
     )
 
 if __name__ == '__main__':
-  curr_time = time.strftime("%H:%M:%S", time.gmtime())
   for dataset in [WIKITEXT_DATASET, PENN_TREEBANK_DATASET]:
     for model in [GPT2, LLAMA_3_8B, MISTRAL_7B, GEMMA_7B]:
       run_llm(
-          curr_time,
           dataset,
           model,
           delta=DELTA, 

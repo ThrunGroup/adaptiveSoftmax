@@ -3,9 +3,12 @@ import torch
 import numpy as np
 from tqdm import tqdm
 
-from llms.loading import load_tokenizer_and_model, load_from_datasets, get_encodings
+from datasets import load_dataset
+from transformers import AutoModelForCausalLM, AutoTokenizer
 from llms.llm_constants import (
-    LLM_WEIGHTS_AND_XS_DIR,
+    LLM_WEIGHTS_DIR,
+    LLM_QUERIES_DIR,
+
     WIKITEXT_DATASET,
     PENN_TREEBANK_DATASET,
     GPT2,
@@ -14,10 +17,10 @@ from llms.llm_constants import (
     GEMMA_7B,
 
     MAX_LENGTH,
-    NUM_QUERY
+    NUM_QUERY,
 )
 
-def load_llm_matrices(
+def load_llm_data(
         dataset=WIKITEXT_DATASET, 
         model_id=GPT2, 
         num_query=NUM_QUERY,
@@ -27,40 +30,55 @@ def load_llm_matrices(
     Reach into the forward function of the model and save the A and xs.
     Will only run if the weights don't already exist
     """
-    os.makedirs(LLM_WEIGHTS_AND_XS_DIR, exist_ok=True)
-    path = f"{model_id}_{dataset}_query{num_query}.npz".replace('/', '_')
-    if testing: path = f"testing_{path}"
-    full_path = f'{LLM_WEIGHTS_AND_XS_DIR}/{path}'
-
-    # Load if file exists. Otherwise generate and save
-    if os.path.exists(full_path):
-        A, X = np.load(full_path, allow_pickle=False).values()
+    # loading A (this nver changes per llm)
+    model_name = model_id.replace('/', '_')
+    os.makedirs(LLM_WEIGHTS_DIR, exist_ok=True)
+    weight_path = f"{LLM_WEIGHTS_DIR}/{model_name}.npz"
+    if os.path.exists(weight_path):
+        A = np.load(weight_path, allow_pickle=False)['weights']
     else:
-        A, X = get_llm_matrices(dataset, model_id, num_query)
-        np.savez_compressed(full_path, A=A, X=X)
+        A = extract_weights(model_id, weight_path)
 
-    print(X.shape)
+    # loading X (this depends on dataset and number of queries)
+    os.makedirs(LLM_QUERIES_DIR, exist_ok=True)
+    query_path = f"{LLM_QUERIES_DIR}/{model_name}_{dataset}_query{num_query}.npz"
+    if os.path.exists(query_path):
+        X = np.load(query_path, allow_pickle=False)['queries']
+    else:
+        X = extract_queries(dataset, model_id, num_query, query_path)
+
     return A, X
 
 
-def get_llm_matrices(datase_name, model_id, num_query):
+def extract_weights(model_id, save_to):
     """
-    Run the forward function and retrieve the A and xs.
+    Function to extract the A matrix from the LLMs. 
+    Returns as a numpy array assigned to cpu 
     """
+    model = AutoModelForCausalLM.from_pretrained(model_id)
+    if model_id == GPT2:
+        A = model.lm_head.weight
+    elif model_id in [LLAMA_3_8B, MISTRAL_7B, GEMMA_7B]:
+        A = model.lm_head.weight
+    
+    A = A.detach().cpu().numpy()
+    np.savez_compressed(save_to, weights=A)
+    return A
+
+
+def extract_queries(dataset_name, model_id, num_query, save_to):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"device is {device}")
 
-    dataset = load_from_datasets(datase_name)
-    tokenizer, model = load_tokenizer_and_model(model_id)
-    model = model.to(device)
-    A = extract_A(model, model_id)
+    dataset = load_from_datasets(dataset_name)
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    model = AutoModelForCausalLM.from_pretrained(model_id).to(device)
     
     # setting the context sizes
-    encodings = get_encodings(tokenizer, dataset, datase_name)
+    encodings = get_encodings(tokenizer, dataset, dataset_name)
     max_length = get_max_length(model, model_id)
     seq_len = encodings.input_ids.size(1)  
     stride = int((seq_len - max_length) / num_query)
-
     print("num_queries should be", int((seq_len - max_length)/stride))
 
     Xs = []
@@ -80,7 +98,8 @@ def get_llm_matrices(datase_name, model_id, num_query):
             Xs.append(x)
         hook.remove()
 
-    return A, np.array(Xs)
+    np.savez_compressed(save_to, queries=Xs)
+    return np.array(Xs)
 
 
 def get_max_length(model, model_id):
@@ -88,20 +107,41 @@ def get_max_length(model, model_id):
         max_length = model.config.n_positions // 2
     elif model_id in [LLAMA_3_8B, MISTRAL_7B, GEMMA_7B]:
         max_length = model.config.max_position_embeddings // 4
-
     return min(max_length, MAX_LENGTH)
 
 
-def extract_A(model, model_id):
+def get_encodings(tokenizer, dataset, dataset_name):
+    # combining texts into single batch
+    if dataset_name == WIKITEXT_DATASET:
+        key = "text"
+    elif dataset_name == PENN_TREEBANK_DATASET:
+        key = "sentence"
+    else:
+        raise NotImplemented("only wikitext and penn treebank supported")
+    return tokenizer("\n\n".join(dataset[key]), return_tensors="pt")
+
+
+def load_from_datasets(
+    dataset_name: str = WIKITEXT_DATASET,
+    num_samples: int = None,
+) -> np.ndarray:
     """
-    Function to extract the A matrix from the LLMs. 
-    Returns as a numpy array assigned to cpu 
+    Given dataset_name, load the dataset with the correct number of samples
     """
-    if model_id == GPT2:
-        A = model.lm_head.weight
-    elif model_id in [LLAMA_3_8B, MISTRAL_7B, GEMMA_7B]:
-        A = model.lm_head.weight
-    return A.detach().cpu().numpy()
+    test_set = None
+    if dataset_name == WIKITEXT_DATASET:
+        test_set = load_dataset("wikitext", "wikitext-2-raw-v1", split="test")
+
+    elif dataset_name == PENN_TREEBANK_DATASET:
+        test_set = load_dataset("ptb_text_only", split="test")
+
+    else:
+        # TODO: more datasets that are spiky??
+        raise NotImplementedError("Only wikitext supported for now")
+
+    if num_samples is None or num_samples > len(test_set):
+            num_samples = len(test_set)
+    return test_set[:num_samples]
 
 
 def register_hook(model, model_id):
@@ -143,13 +183,14 @@ def extract_final_hidden_state(module, input, output):
 
 
 if __name__ == "__main__":
-    for dataset in [PENN_TREEBANK_DATASET]:
+    for dataset in [WIKITEXT_DATASET, PENN_TREEBANK_DATASET]:
         print(f"=> dataset {dataset}")
         for model_id in [GPT2, LLAMA_3_8B, MISTRAL_7B, GEMMA_7B]:
             print(f"=> model_id {model_id}")
-            load_llm_matrices(
+            A, X = load_llm_data(
                 dataset=dataset, 
                 model_id=model_id, 
                 num_query=1000,
                 testing=False,
             )
+            print(X.shape)

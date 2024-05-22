@@ -5,7 +5,8 @@ PENN_TREEBANK_DATASET = "penn_treebank"
 
 # paths
 LLM_RESULTS_DIR = "experiments/llm_results"
-LLM_WEIGHTS_AND_XS_DIR = "llms/weights_and_xs"
+LLM_WEIGHTS_DIR = "llms/weights"
+LLM_QUERIES_DIR = "llms/queries"
 
 # llm constants
 GPT2 = "gpt2"
