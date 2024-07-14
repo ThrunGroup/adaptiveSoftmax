@@ -16,7 +16,7 @@ def clean_singleton_np_array_columns(data: pd.DataFrame):
   return data
 
 def get_budget_and_success_rate(data: pd.DataFrame):
-  budget = np.mean(data['budget_total'] / (data['d'] * data['n']))
+  budget = np.mean(data['budget_total'] / (data['d_not_sparse'] * data['n']))
   bandit_success = data['best_arm'] == data['best_arm_hat']
   log_norm_success = np.abs(data['p_hat_best_arm_hat'] - data['p_best_arm']) / data['p_best_arm'] <= 0.3
   success_rate = np.mean(bandit_success & log_norm_success)
