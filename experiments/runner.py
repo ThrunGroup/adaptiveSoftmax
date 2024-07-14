@@ -59,6 +59,7 @@ def run_sftm(
     res['dataset'] = dataset
     res['n'] = sftm.n
     res['d'] = sftm.d
+    res["density"] = np.count_nonzero(sftm.A)
     res['query'] = i
     res['d_not_sparse'] = sftm.bandits.max_pulls
     res['budget_total'] = total_budget
@@ -158,4 +159,4 @@ def run(
     X_train, X = split_train_test(X, train_size, seed)
     fudge_bandits, fudge_log_norm = sftm.tune_fudge_factors(X_train, verbose=True)
 
-  return run_sftm(save_to, model, dataset, sftm, X, fudge_bandits, fudge_log_norm, seed, quiet)
+  return run_sftm(save_to, model, dataset, sftm, X, fudge_bandits, fudge_log_norm, seed, quiet, is_sparse)

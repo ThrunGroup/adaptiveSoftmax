@@ -24,3 +24,6 @@ mnl/data
 
 llms/queries
 llms/weights
+
+mnl/weights
+mnl/x_matrix

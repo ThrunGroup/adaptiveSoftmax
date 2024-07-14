@@ -42,6 +42,7 @@ MNL_TEST_BUDGET_IMPROVEMENT = 1.0
 MNL_TEST_SEED = 0
 
 # final experiments
+GOOGLE_DRIVE_PREFIX = "https://drive.google.com/uc?id="
 MNL_SCALING_POINTS = 5
 MNIST_FINAL_PATH = "testing_mnist_out256_iter50_epochs14.npz"
 EUROSAT_FINAL_PATH = "testing_eurosat_out25088_iter50_epochs1000.npz"
