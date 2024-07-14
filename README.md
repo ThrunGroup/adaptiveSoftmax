@@ -1,3 +1,10 @@
+# Downloading Data LLM / MNL data
+To install the LLM weights (`gpt2`, `Mistral7B`, `Llama3-8B`, and `Gemma7b`) and queries (datasets `wikitext` and `penn treebank`) go to this public google [drive](https://drive.google.com/drive/folders/1aiCuaO9lyvaLyaZMdscgWyx0qz28FbJQ) and download as `llms/weights` and `llms/queries`. 
+
+To install the MNL weights ()
+
+
+
 # One Line script
 Please run `chmod +x run.sh && ./run.sh` to generate reproduce all experiments. This script will do the following:
 1. create a conda environment with `python=3.11`
