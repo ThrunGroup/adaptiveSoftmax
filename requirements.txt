@@ -9,3 +9,5 @@ wandb==0.15.12
 hadamard_transform==0.1.3
 scipy==1.12.0
 seaborn==0.11.2
+
+gdown

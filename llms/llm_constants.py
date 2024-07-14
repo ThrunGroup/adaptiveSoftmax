@@ -34,3 +34,4 @@ EPS = 0.3
 NUM_EXPERIMENTS = 10
 FUDGE_TRAIN_SIZE = 200
 NUM_QUERY = 1000
+GOOGLE_DRIVE_PREFIX = "https://drive.google.com/uc?id="

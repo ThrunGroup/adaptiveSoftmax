@@ -76,7 +76,7 @@ def run_mnl(dataset, delta, eps):
     return save_path
 
 if __name__ == "__main__":
-    for dataset in [MNIST, EUROSAT]:
+    for dataset in [EUROSAT]:
         run_mnl(
             dataset,
             delta=DELTA, 
